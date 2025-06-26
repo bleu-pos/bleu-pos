@@ -5,7 +5,7 @@ import './menu.css';
 
 const API_BASE_URL = 'https://product-services-boz2.onrender.com';
 
-function Menu() {
+function Menu() { 
   // State for UI and Cart
   const [selectedFilter, setSelectedFilter] = useState({ type: 'all', value: 'All Products' });
   const [cartItems, setCartItems] = useState([]);
