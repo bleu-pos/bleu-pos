@@ -5,7 +5,7 @@ import Sidebar from "../sidebar";
 import Header from "../admin/header"; // Import the Header component
 import DataTable from "react-data-table-component";
 
-const API_BASE_URL = "https://product-services-boz2.onrender.com";
+const API_BASE_URL = "https://product-services-1.onrender.com";
 const getAuthToken = () => localStorage.getItem("authToken");
 
 function Products() {
