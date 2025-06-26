@@ -109,7 +109,7 @@ function Products() {
     setSearchTerm("");
   }, [activeTab]);
 
-  const DEFAULT_PRODUCT_IMAGE = "/images/default-product.png"; // adjust as needed
+  const DEFAULT_PRODUCT_IMAGE = "/images/default-product.png"; // Make sure this is in your public/images folder
 
   const columns = [
     {
@@ -118,7 +118,8 @@ function Products() {
       cell: (row) => (
         <div className="food-info">
           <img
-            src={row.ProductImage || DEFAULT_PRODUCT_IMAGE}
+            // --- THIS IS THE CORRECTED LINE ---
+            src={row.ProductImage ? `${API_BASE_URL}${row.ProductImage}` : DEFAULT_PRODUCT_IMAGE}
             alt={row.ProductName}
             className="food-photo"
             onError={(e) => {
