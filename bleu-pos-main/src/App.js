@@ -15,7 +15,7 @@ import CashierSpillage from './components/cashier/cashierSpillage';
 
 function RedirectToLoginSystem() {
   useEffect(() => {
-    window.location.href = 'http://localhost:4002/';
+    window.location.href = 'https://bleu-ums.vercel.app/';
   }, []);
 
   return null;
