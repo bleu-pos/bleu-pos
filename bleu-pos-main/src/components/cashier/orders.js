@@ -5,7 +5,7 @@ import DataTable from "react-data-table-component";
 import OrderPanel from "./orderPanel";
 
 // --- For easy configuration, define the base URLs for your services ---
-const SALES_API_BASE_URL = 'https://product-services-1.onrender.com'; // Your existing Sales Service
+const SALES_API_BASE_URL = 'https://sales-service-bm35.onrender.com'; // Your existing Sales Service
 const ONLINE_API_BASE_URL = 'https://ordering-service.onrender.com'; // Your new Online/Cart Service
 
 function Orders() {
