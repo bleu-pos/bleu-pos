@@ -19,12 +19,12 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database import get_db_connection
 
 # --- Auth and Service URL Configuration ---
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="http://127.0.0.1:4000/auth/token")
-USER_SERVICE_ME_URL = "http://localhost:4000/auth/users/me"
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="https://bleu-ums.onrender.com/auth/token")
+USER_SERVICE_ME_URL = "https://bleu-ums.onrender.com/auth/users/me"
 
 # --- URLs for Inventory Deduction Endpoints ---
-INGREDIENTS_DEDUCT_URL = "http://127.0.0.1:8002/ingredients/ingredients/deduct-from-sale"
-MATERIALS_DEDUCT_URL = "http://127.0.0.1:8003/materials/materials/deduct-from-sale"
+INGREDIENTS_DEDUCT_URL = "https://ingredient-services.onrender.com/ingredients/ingredients/deduct-from-sale"
+MATERIALS_DEDUCT_URL = "https://material-service.onrender.com/materials/materials/deduct-from-sale"
 
 router_sales = APIRouter(prefix="/auth/sales", tags=["sales"])
 

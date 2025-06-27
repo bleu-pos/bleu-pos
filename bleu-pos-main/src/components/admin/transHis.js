@@ -8,7 +8,7 @@ import DataTable from "react-data-table-component";
 const getAuthToken = () => localStorage.getItem("authToken");
 
 // --- CHANGED: Define the API URL for easy access
-const API_URL = "http://127.0.0.1:9000/auth/purchase_orders/all";
+const API_URL = "https://sales-service-bm35.onrender.com/auth/purchase_orders/all";
 
 // --- CHANGED: Create a function to transform API data into the format the component expects
 const transformApiData = (apiTransaction) => {

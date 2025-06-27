@@ -11,8 +11,8 @@ import {
   OrderConfirmationModal 
 } from './cartModals';
 
-const SALES_API_URL = 'http://127.0.0.1:9000';
-const DISCOUNTS_API_URL = 'http://127.0.0.1:9002';
+const SALES_API_URL = 'https://sales-service-bm35.onrender.com';
+const DISCOUNTS_API_URL = 'https://discount-services.onrender.com';
 
 const CartPanel = ({
   cartItems,

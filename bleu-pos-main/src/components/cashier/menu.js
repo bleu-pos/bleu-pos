@@ -3,7 +3,7 @@ import Navbar from '../navbar';
 import CartPanel from './cartPanel.js';
 import './menu.css';
 
-const API_BASE_URL = 'http://127.0.0.1:8001';
+const API_BASE_URL = 'https://product-services-1.onrender.com';
 
 function Menu() {
   // State for UI and Cart

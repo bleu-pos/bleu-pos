@@ -10,7 +10,7 @@ import DiscountModal from "../admin/discountModal";
 import PromotionModal from "../admin/promotionModal";
 
 // --- API Configuration ---
-const API_BASE_URL = "http://localhost:9002/api"; // Your Discount Service URL
+const API_BASE_URL = "https://sales-service-bm35.onrender.com/api"; // Your Discount Service URL
 
 // --- API Helper Function ---
 // A reusable wrapper for fetch that adds auth headers and handles errors

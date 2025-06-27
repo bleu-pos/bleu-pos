@@ -19,8 +19,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database import get_db_connection
 
 # --- Auth and Service URL Configuration ---
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="http://127.0.0.1:4000/auth/token")
-USER_SERVICE_ME_URL = "http://localhost:4000/auth/users/me"
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="https://bleu-ums.onrender.com//auth/token")
+USER_SERVICE_ME_URL = "https://bleu-ums.onrender.com//auth/users/me"
 
 # --- Define the new router ---
 router_purchase_order = APIRouter(
