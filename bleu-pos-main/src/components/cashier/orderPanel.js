@@ -2,35 +2,29 @@ import React, { useState } from "react";
 import "./orderPanel.css";
 import dayjs from 'dayjs';
 
-function OrderPanel({ order, onClose, isOpen, isStore, onCompleteOrder, onUpdateStatus }) {
+/**
+ * OrderPanel Component
+ * Displays the detailed view of a selected order (both store and online).
+ * It provides actions like changing order status, cancelling, and printing receipts.
+ * This component is controlled by its parent (`orders.js`).
+ */
+function OrderPanel({ order, onClose, isOpen, isStore, onUpdateStatus }) {
   const [showPinModal, setShowPinModal] = useState(false);
   const [enteredPin, setEnteredPin] = useState("");
   const [pinError, setPinError] = useState("");
   const [showReceiptModal, setShowReceiptModal] = useState(false);
 
-  const MANAGER_PIN = "1234";
+  // This should be stored in a more secure way in a real application (e.g., environment variable)
+  const MANAGER_PIN = "1234"; 
 
+  // Don't render anything if there's no order selected
   if (!order) return null;
 
-  // Calculate subtotal
-  const subtotal = order.orderItems.reduce((sum, item) => {
-    const itemTotal = item.price * item.quantity;
-    return sum + itemTotal;
-  }, 0);
-
-  // Calculate discount amount
+  // --- Calculations ---
+  const subtotal = order.orderItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const discount = subtotal - order.total;
 
-  const availableDiscounts = [
-    { id: 'senior', name: 'Senior Citizen', type: 'percentage', value: 20, description: '20% off total' },
-    { id: 'pwd', name: 'PWD', type: 'percentage', value: 20, description: '20% off total' },
-    { id: 'student', name: 'Student', type: 'percentage', value: 10, description: '10% off total' },
-    { id: 'employee', name: 'Employee', type: 'percentage', value: 15, description: '15% off total' },
-    { id: 'loyalty', name: 'Loyalty Card', type: 'fixed', value: 25, description: '₱25 off' },
-    { id: 'promo100', name: 'Buy ₱100 Get ₱10 Off', type: 'fixed', value: 10, description: '₱10 off for orders ≥₱100', minAmount: 100 },
-    { id: 'firsttime', name: 'First Time Customer', type: 'percentage', value: 5, description: '5% off total' }
-  ];
-
+  // --- Event Handlers ---
   const handleCancelOrder = () => {
     setShowPinModal(true);
   };
@@ -40,37 +34,29 @@ function OrderPanel({ order, onClose, isOpen, isStore, onCompleteOrder, onUpdate
       setShowPinModal(false);
       setEnteredPin("");
       setPinError("");
-      onUpdateStatus(order.id, "CANCELLED");
+      // Pass the full order object for consistency, parent handles API call
+      onUpdateStatus(order, "CANCELLED");
     } else {
       setPinError("Invalid credentials");
     }
   };
 
-  const handlePrintReceipt = () => {
-    setShowReceiptModal(true);
-  };
-
-  const confirmPrintReceipt = () => {
-    setShowReceiptModal(false);
+  const handlePrintReceipt = () => setShowReceiptModal(true);
+  const confirmPrintReceipt = () => { 
+    setShowReceiptModal(false); 
+    // This uses the browser's print functionality, targeting the receipt modal's content
+    const printContents = document.getElementById("orderpanel-print-section").innerHTML;
+    const originalContents = document.body.innerHTML;
+    document.body.innerHTML = printContents;
     window.print();
-  };
-
-  const handleCompleteOrder = () => {
-    if (onCompleteOrder) {
-      onCompleteOrder(order.id);
-    }
+    document.body.innerHTML = originalContents;
+    window.location.reload(); // Reload to restore event listeners if needed
   };
 
   const getDiscountDisplay = () => {
-    if (order.appliedDiscount) {
-      if (typeof order.appliedDiscount === "string") {
-        const discount = availableDiscounts.find(d => d.id === order.appliedDiscount);
-        if (discount) return `${discount.name} - ${discount.description}`;
-      }
-      if (typeof order.appliedDiscount === "object" && order.appliedDiscount.id) {
-        const discount = availableDiscounts.find(d => d.id === order.appliedDiscount.id);
-        if (discount) return `${discount.name} - ${discount.description}`;
-      }
+    // This is a placeholder. A real implementation would look up discount details.
+    if (discount > 0) {
+        return `Discount Applied`;
     }
     return 'None';
   };
@@ -83,20 +69,14 @@ function OrderPanel({ order, onClose, isOpen, isStore, onCompleteOrder, onUpdate
 
       <div className="orderpanel-content">
         <div className="orderpanel-info">
-          <p className="orderpanel-info-item"><span className="orderpanel-label">Order ID:</span> #{order.id}</p>
-          <p className="orderpanel-info-item"><span className="orderpanel-label">Order Type:</span> {order.orderType || (isStore ? "Store" : "Online")}</p>
-          <p className="orderpanel-info-item"><span className="orderpanel-label">Date:</span> {dayjs(order.date).format("MMMM D, YYYY - h:mm A")}</p>
-          <p className="orderpanel-info-item"><span className="orderpanel-label">Payment Method:</span> {order.paymentMethod}</p>
-          <p className="orderpanel-info-item">
-            <span className="orderpanel-label">Status:</span> 
-            <span className={`orderpanel-status-badge ${
-              order.status === "COMPLETED" ? "orderpanel-completed" :
-              order.status === "REQUEST TO ORDER" ? "orderpanel-request" :
-              order.status === "PROCESSING" ? "orderpanel-processing" :
-              order.status === "FOR PICK UP" ? "orderpanel-forpickup" :
-              "orderpanel-cancelled"
-            }`}>{order.status}</span>
-          </p>
+            <p className="orderpanel-info-item"><span className="orderpanel-label">Order ID:</span> #{order.id}</p>
+            <p className="orderpanel-info-item"><span className="orderpanel-label">Order Type:</span> {order.orderType || (isStore ? "Store" : "Online")}</p>
+            <p className="orderpanel-info-item"><span className="orderpanel-label">Date:</span> {dayjs(order.date).format("MMMM D, YYYY - h:mm A")}</p>
+            <p className="orderpanel-info-item"><span className="orderpanel-label">Payment Method:</span> {order.paymentMethod}</p>
+            <p className="orderpanel-info-item">
+                <span className="orderpanel-label">Status:</span>
+                <span className={`orderpanel-status-badge orderpanel-${order.status.toLowerCase().replace(/ /g, '')}`}>{order.status}</span>
+            </p>
         </div>
 
         <div className="orderpanel-items-header">
@@ -110,95 +90,75 @@ function OrderPanel({ order, onClose, isOpen, isStore, onCompleteOrder, onUpdate
             <div key={idx} className="orderpanel-item">
               <div className="orderpanel-item-details">
                 <div className="orderpanel-item-name">{item.name}</div>
-                <div className="orderpanel-item-price">₱{item.basePrice ?? item.price}</div>
-                {item.extras?.length > 0 && (
-                  <div className="orderpanel-extras">
-                    {item.extras.map((extra, i) => (
-                      <div key={i} className="orderpanel-extra">{extra}</div>
-                    ))}
-                  </div>
-                )}
+                {/* For online orders, item.price might be 0, so don't show it */}
+                {isStore && <div className="orderpanel-item-price">₱{item.price.toFixed(2)}</div>}
               </div>
               <div className="orderpanel-item-qty">{item.quantity}</div>
-              <div className="orderpanel-item-subtotal">₱{(item.price * item.quantity).toFixed(0)}</div>
+              <div className="orderpanel-item-subtotal">₱{(item.price * item.quantity).toFixed(2)}</div>
             </div>
           ))}
         </div>
 
         <div className="orderpanel-summary">
-          <div className="orderpanel-promotions">
-            <span className="orderpanel-promotions-label">Discounts and Promotions used:</span>
-            <span className="orderpanel-promotions-value">{getDiscountDisplay()}</span>
-          </div>
-
-          <div className="orderpanel-calculation">
-            <div className="orderpanel-calc-row">
-              <span className="orderpanel-calc-label">Subtotal:</span>
-              <span className="orderpanel-calc-value">₱{subtotal.toFixed(0)}</span>
+            <div className="orderpanel-promotions">
+                <span className="orderpanel-promotions-label">Discounts and Promotions used:</span>
+                <span className="orderpanel-promotions-value">{getDiscountDisplay()}</span>
             </div>
-            <div className="orderpanel-calc-row">
-              <span className="orderpanel-calc-label">Discount:</span>
-              <span className="orderpanel-calc-value">₱{discount.toFixed(0)}</span>
+            <div className="orderpanel-calculation">
+                <div className="orderpanel-calc-row"><span className="orderpanel-calc-label">Subtotal:</span><span className="orderpanel-calc-value">₱{subtotal.toFixed(2)}</span></div>
+                <div className="orderpanel-calc-row"><span className="orderpanel-calc-label">Discount:</span><span className="orderpanel-calc-value">- ₱{discount.toFixed(2)}</span></div>
+                <div className="orderpanel-calc-row orderpanel-total-row"><span className="orderpanel-calc-label">Total:</span><span className="orderpanel-calc-value">₱{order.total.toFixed(2)}</span></div>
             </div>
-            <div className="orderpanel-calc-row orderpanel-total-row">
-              <span className="orderpanel-calc-label">Total:</span>
-              <span className="orderpanel-calc-value">₱{order.total.toFixed(0)}</span>
-            </div>
-          </div>
         </div>
 
-        {/* Hide actions if cancelled */}
-        {order.status !== "CANCELLED" && (
+        {/* --- DYNAMIC ACTION BUTTONS --- */}
+        {/* Hide all actions if the order is in a final state */}
+        {order.status !== "CANCELLED" && order.status !== "COMPLETED" && order.status !== "DELIVERED" && (
           <div className="orderpanel-actions">
+            {/* Store-specific actions */}
             {isStore && order.status === "PROCESSING" && (
-              <button className="orderpanel-btn orderpanel-btn-complete" onClick={handleCompleteOrder}>
+              <button className="orderpanel-btn orderpanel-btn-complete" onClick={() => onUpdateStatus(order, "COMPLETED")}>
                 Mark as Completed
               </button>
             )}
 
+            {/* Online-specific actions */}
             {!isStore && (
               <>
-                {order.status === "REQUEST TO ORDER" && (
-                  <button className="orderpanel-btn orderpanel-btn-complete" onClick={() => onUpdateStatus(order.id, "PROCESSING")}>
+                {order.status === "PENDING" && (
+                  <button className="orderpanel-btn orderpanel-btn-complete" onClick={() => onUpdateStatus(order, "PREPARING")}>
                     Accept Order
                   </button>
                 )}
-                {order.status === "PROCESSING" && (
-                  <button className="orderpanel-btn orderpanel-btn-complete" onClick={() => onUpdateStatus(order.id, "FOR PICK UP")}>
-                    Mark as For Pick Up
+                {order.status === "PREPARING" && (
+                  <button className="orderpanel-btn orderpanel-btn-complete" onClick={() => onUpdateStatus(order, "DELIVERED")}>
+                    Mark as Delivered
                   </button>
                 )}
-                {order.status === "FOR PICK UP" && (
-                  <button className="orderpanel-btn orderpanel-btn-complete" onClick={() => onUpdateStatus(order.id, "COMPLETED")}>
-                    Mark as Completed
-                  </button>
-                )}
-                {/* Cancel button for online orders - only show if not completed */}
-                {order.status !== "COMPLETED" && (
-                  <button className="orderpanel-btn orderpanel-btn-refund" onClick={handleCancelOrder}>
-                    Cancel Order
-                  </button>
-                )}
+                <button className="orderpanel-btn orderpanel-btn-refund" onClick={handleCancelOrder}>
+                  Cancel Order
+                </button>
               </>
             )}
 
+            {/* Shared actions for store orders */}
             {isStore && (
               <>
-                {/* Always show print receipt for store orders */}
-                <button className="orderpanel-btn orderpanel-btn-print" onClick={handlePrintReceipt}>
-                  Print Receipt
-                </button>
-                {/* Only show cancel button if order is not completed */}
-                {order.status !== "COMPLETED" && (
-                  <button className="orderpanel-btn orderpanel-btn-refund" onClick={handleCancelOrder}>
-                    Cancel Order
-                  </button>
-                )}
+                <button className="orderpanel-btn orderpanel-btn-print" onClick={handlePrintReceipt}>Print Receipt</button>
+                <button className="orderpanel-btn orderpanel-btn-refund" onClick={handleCancelOrder}>Cancel Order</button>
               </>
             )}
           </div>
         )}
 
+        {/* Actions for completed store orders */}
+        {(order.status === "COMPLETED" || order.status === "DELIVERED") && isStore && (
+             <div className="orderpanel-actions">
+                <button className="orderpanel-btn orderpanel-btn-print" onClick={handlePrintReceipt}>Print Receipt</button>
+            </div>
+        )}
+
+        {/* --- MODALS --- */}
         {showPinModal && (
           <div className="orderpanel-modal-overlay" onClick={() => setShowPinModal(false)}>
             <div className="orderpanel-modal-content" onClick={(e) => e.stopPropagation()}>
@@ -216,9 +176,10 @@ function OrderPanel({ order, onClose, isOpen, isStore, onCompleteOrder, onUpdate
                 value={enteredPin}
                 onChange={(e) => {
                   const value = e.target.value;
+                  // Ensure only numbers are entered
                   if (/^\d*$/.test(value)) {
                     setEnteredPin(value);
-                    setPinError("");
+                    setPinError(""); // Clear error on new input
                   }
                 }}
               />
@@ -241,54 +202,51 @@ function OrderPanel({ order, onClose, isOpen, isStore, onCompleteOrder, onUpdate
             </div>
           </div>
         )}
+
         {showReceiptModal && (
           <div className="orderpanel-modal-overlay" onClick={() => setShowReceiptModal(false)}>
             <div className="orderpanel-modal-content orderpanel-receipt-modal" onClick={(e) => e.stopPropagation()}>
+              {/* This inner div is what gets targeted for printing */}
               <div className="orderpanel-receipt-print" id="orderpanel-print-section">
-              <div className="orderpanel-receipt-header">
-                <div className="orderpanel-store-name">Bleu Bean Cafe</div>
-                <div className="orderpanel-receipt-date">Date: {dayjs(order.date).format("MMMM D, YYYY - h:mm A")}</div>
-                <div className="orderpanel-receipt-id">Order #: {order.id}</div>
-              </div>
+                <div className="orderpanel-receipt-header">
+                  <div className="orderpanel-store-name">Bleu Bean Cafe</div>
+                  <div className="orderpanel-receipt-date">Date: {dayjs(order.date).format("MMMM D, YYYY - h:mm A")}</div>
+                  <div className="orderpanel-receipt-id">Order #: {order.id}</div>
+                </div>
 
-              <div className="orderpanel-receipt-body">
-                {order.orderItems.map((item, i) => (
-                  <div key={i} className="orderpanel-receipt-item">
-                    <div className="orderpanel-receipt-line">
-                      <span className="orderpanel-receipt-item-name">{item.name} x{item.quantity}</span>
-                      <span className="orderpanel-receipt-item-price">₱{(item.price * item.quantity).toFixed(2)}</span>
-                    </div>
-                    {item.extras?.length > 0 && item.extras.map((extra, j) => (
-                      <div key={j} className="orderpanel-receipt-line">
-                        <span className="orderpanel-receipt-extra">+ {extra}</span>
-                        <span className="orderpanel-receipt-extra-price"></span>
+                <div className="orderpanel-receipt-body">
+                  {order.orderItems.map((item, i) => (
+                    <div key={i} className="orderpanel-receipt-item">
+                      <div className="orderpanel-receipt-line">
+                        <span className="orderpanel-receipt-item-name">{item.name} x{item.quantity}</span>
+                        <span className="orderpanel-receipt-item-price">₱{(item.price * item.quantity).toFixed(2)}</span>
                       </div>
-                    ))}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="orderpanel-receipt-summary">
+                  <div className="orderpanel-receipt-line">
+                    <span>Subtotal:</span>
+                    <span>₱{subtotal.toFixed(2)}</span>
                   </div>
-                ))}
-              </div>
+                  <div className="orderpanel-receipt-line">
+                    <span>Discount:</span>
+                    <span>- ₱{discount.toFixed(2)}</span>
+                  </div>
+                  <div className="orderpanel-receipt-line orderpanel-receipt-total">
+                    <strong>Total:</strong>
+                    <strong>₱{order.total.toFixed(2)}</strong>
+                  </div>
+                </div>
 
-              <div className="orderpanel-receipt-summary">
-                <div className="orderpanel-receipt-line">
-                  <span>Subtotal:</span>
-                  <span>₱{subtotal.toFixed(2)}</span>
-                </div>
-                <div className="orderpanel-receipt-line">
-                  <span>Discount:</span>
-                  <span>₱{discount.toFixed(2)}</span>
-                </div>
-                <div className="orderpanel-receipt-line orderpanel-receipt-total">
-                  <strong>Total:</strong>
-                  <strong>₱{order.total.toFixed(2)}</strong>
+                <div className="orderpanel-receipt-footer">
+                  <div className="orderpanel-thankyou">*** THANK YOU ***</div>
+                  <div className="orderpanel-served-by">Cashier</div>
                 </div>
               </div>
 
-              <div className="orderpanel-receipt-footer">
-                <div className="orderpanel-thankyou">*** THANK YOU ***</div>
-                <div className="orderpanel-served-by">Served by: Cashier</div>
-              </div>
-            </div>
-
+              {/* These buttons are part of the UI, not the printed receipt */}
               <div className="orderpanel-modal-buttons">
                 <button
                   className="orderpanel-modal-btn orderpanel-modal-cancel"

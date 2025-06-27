@@ -2,7 +2,10 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from 'react-router-dom';
 import { FaChevronDown, FaBell } from "react-icons/fa";
 import { jwtDecode } from 'jwt-decode';
+import { confirmAlert } from 'react-confirm-alert'; // ✅ import this
+import 'react-confirm-alert/src/react-confirm-alert.css'; // ✅ import CSS
 import "./header.css";
+import './confirmAlertCustom.css';
 
 const Header = ({ pageTitle }) => {
   const [isDropdownOpen, setDropdownOpen] = useState(false);
@@ -11,14 +14,30 @@ const Header = ({ pageTitle }) => {
   const [userRole, setUserRole] = useState("Admin");
   const navigate = useNavigate();
 
-  const toggleDropdown = () => {
-    setDropdownOpen(!isDropdownOpen);
+  const toggleDropdown = () => setDropdownOpen(!isDropdownOpen);
+
+  // ✅ show confirmation before logout
+  const confirmLogout = () => {
+    confirmAlert({
+      title: 'Confirm Logout',
+      message: 'Are you sure you want to log out?',
+      buttons: [
+        {
+          label: 'Yes',
+          onClick: () => handleLogout()
+        },
+        {
+          label: 'No',
+          onClick: () => {}
+        }
+      ]
+    });
   };
 
   const handleLogout = useCallback(() => {
-      localStorage.removeItem('authToken');
-      localStorage.removeItem('username');
-      navigate('/');
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('username');
+    navigate('/');
   }, [navigate]);
 
   useEffect(() => {
@@ -29,7 +48,7 @@ const Header = ({ pageTitle }) => {
     if (usernameFromUrl && tokenFromUrl) {
       localStorage.setItem('username', usernameFromUrl);
       localStorage.setItem('authToken', tokenFromUrl);
-   
+
       if (window.history.replaceState) {
         const cleanUrl = `${window.location.protocol}//${window.location.host}${window.location.pathname}`;
         window.history.replaceState({ path: cleanUrl }, '', cleanUrl);
@@ -37,7 +56,7 @@ const Header = ({ pageTitle }) => {
     }
 
     const storedUsername = localStorage.getItem('username');
-    const storedToken = localStorage.getItem('authToken'); 
+    const storedToken = localStorage.getItem('authToken');
 
     if (storedUsername && storedToken) {
       setUserName(storedUsername);
@@ -52,7 +71,7 @@ const Header = ({ pageTitle }) => {
       console.log("No session found. Redirecting to login.");
       navigate('/');
     }
-  }, [navigate, handleLogout]); 
+  }, [navigate, handleLogout]);
 
   useEffect(() => {
     const timerId = setInterval(() => setCurrentDate(new Date()), 1000);
@@ -91,7 +110,7 @@ const Header = ({ pageTitle }) => {
           {isDropdownOpen && (
             <div className="profile-dropdown">
               <ul>
-                <li onClick={handleLogout}>Logout</li>
+                <li onClick={confirmLogout}>Logout</li> {/* ✅ Changed */}
               </ul>
             </div>
           )}

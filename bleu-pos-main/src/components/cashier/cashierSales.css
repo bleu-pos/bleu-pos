@@ -66,6 +66,7 @@ body, html {
   color: #5a6c75;
   border-left: 4px solid #4B929D;
   flex-shrink: 0;
+  align-items: center; /* Add this line */
 }
 
 .cashier-shift,
@@ -1071,4 +1072,177 @@ body, html {
     padding: 12px 16px;
     font-size: 12px;
   }
+}
+
+/* Export Report Button */
+.cashier-export-report-btn {
+  display: flex;
+  align-items: center;
+  color: white;
+  background:  #007BFF;
+  border: none;
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  gap: 10px;
+  transition: all 0.2s ease;
+}
+
+.cashier-export-report-btn:hover {
+  background: #0069d9;
+}
+
+.cashier-export-modal {
+  width: 800px; 
+  max-width: 95vw;
+}
+
+.cashier-export-options {
+  padding: 20px 0;
+}
+
+.cashier-export-section {
+  margin-bottom: 20px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.cashier-export-section h3 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 10px 0;
+  color: #333;
+}
+
+.cashier-export-radio-group {
+  display: flex;
+  flex-direction: row;
+  gap: 15px;
+  flex-wrap: nowrap; /* Prevent wrapping */
+  overflow-x: auto; 
+}
+
+.cashier-export-radio {
+  width: 235px; /* Fixed width for alignment */
+  flex-shrink: 0; /* Prevent shrinking */
+  display: flex;
+  flex-direction: column;
+  cursor: pointer;
+  padding: 15px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+  background: #fafafa;
+}
+
+.cashier-export-radio:hover {
+  border-color: #4CAF50;
+  background: #f8fff8;
+}
+
+.cashier-export-radio input[type="radio"] {
+  display: none;
+}
+
+.cashier-export-radio input[type="radio"]:checked + span {
+  color: #4CAF50;
+  font-weight: 600;
+}
+
+.cashier-export-radio input[type="radio"]:checked ~ * {
+  color: #4CAF50;
+}
+
+.cashier-export-radio:has(input[type="radio"]:checked) {
+  border-color: #4CAF50;
+  background: #f8fff8;
+  box-shadow: 0 2px 8px rgba(76, 175, 80, 0.2);
+}
+
+.cashier-export-radio span {
+  font-size: 16px;
+  font-weight: 500;
+  margin-bottom: 5px;
+  transition: all 0.3s ease;
+}
+
+.cashier-export-radio small {
+  color: #666;
+  font-size: 12px;
+  line-height: 1.4;
+  transition: all 0.3s ease;
+}
+
+.cashier-export-preview {
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.cashier-preview-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 8px 0;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.cashier-preview-item:last-child {
+  border-bottom: none;
+}
+
+.cashier-preview-item strong {
+  color: #333;
+  font-weight: 600;
+  margin-right: 10px;
+  min-width: 100px;
+}
+
+.cashier-export-actions {
+  display: flex;
+  gap: 15px;
+  justify-content: flex-end;
+}
+
+.cashier-export-btn {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cashier-export-cancel {
+  background: #f8f9fa;
+  color: #6c757d;
+  border: 2px solid #e9ecef;
+}
+
+.cashier-export-cancel:hover {
+  background: #e9ecef;
+  color: #495057;
+}
+
+.cashier-export-generate {
+  background: linear-gradient(135deg, #dc3545, #c82333);
+  color: white;
+  box-shadow: 0 2px 4px rgba(220, 53, 69, 0.3);
+}
+
+.cashier-export-generate:hover {
+  background: linear-gradient(135deg, #c82333, #a71e2a);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(220, 53, 69, 0.4);
+}
+
+.cashier-export-generate:active {
+  transform: translateY(0);
 }

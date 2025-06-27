@@ -14,14 +14,21 @@ import {
   faExclamationTriangle,
   faCheckCircle,
   faCoins,
-  faCashRegister
+  faCashRegister,
+  faFileExport,
+  faFilePdf,
+  faDownload
 } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 function CashierSales({ employeeName = "Lim Alcovendas", shiftLabel = "Morning Shift", shiftTime = "6:00AM – 2:00PM", date }) {
   const [activeTab, setActiveTab] = useState('summary');
   const [modalType, setModalType] = useState(null);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [reportType, setReportType] = useState('daily');
+  const [showExportModal, setShowExportModal] = useState(false);
   
   // Cash drawer state
   const [cashCounts, setCashCounts] = useState({
@@ -46,6 +53,9 @@ function CashierSales({ employeeName = "Lim Alcovendas", shiftLabel = "Morning S
     month: 'long',
     day: 'numeric',
   });
+
+  // Get today's date in YYYY-MM-DD format for max date restriction
+  const todayString = today.toISOString().split('T')[0];
 
   const salesMetrics = [
     {
@@ -77,6 +87,28 @@ function CashierSales({ employeeName = "Lim Alcovendas", shiftLabel = "Morning S
       icon: faShoppingCart,
     },
   ];
+
+  // Additional metrics for comprehensive reporting
+  const getReportMetrics = () => {
+    return {
+      totalSales: 10300.5,
+      cashSales: 6180.3,
+      gcashSales: 4120.2,
+      creditCardSales: 0,
+      totalTransactions: 28,
+      averageTransactionValue: 367.88,
+      discountsApplied: 450.00,
+      totalDiscountTransactions: 8,
+      taxAmount: 1545.08,
+      netSales: 8755.42,
+      refunds: 125.00,
+      voids: 0,
+      itemsSold: 74,
+      topPaymentMethod: 'Cash (60%)',
+      peakHour: '10:00 AM - 11:00 AM',
+      customerCount: 28
+    };
+  };
 
   // Cash denominations configuration
   const denominations = [
@@ -260,6 +292,14 @@ function CashierSales({ employeeName = "Lim Alcovendas", shiftLabel = "Morning S
     setModalType(null);
   };
 
+  const openExportModal = () => {
+    setShowExportModal(true);
+  };
+
+  const closeExportModal = () => {
+    setShowExportModal(false);
+  };
+
   const getFilteredData = (data) => {
     // In a real application, you would filter based on the selected date
     // For now, we'll just return all data
@@ -274,6 +314,192 @@ function CashierSales({ employeeName = "Lim Alcovendas", shiftLabel = "Morning S
   const handleConfirmCount = () => {
     // This would typically save the count to the database
     alert('Cash count has been confirmed and saved.');
+  };
+
+  const generatePDFReport = (type) => {
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+    const metrics = getReportMetrics();
+    const reportDate = new Date(selectedDate).toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+
+    // Header
+    doc.setFontSize(16);
+    doc.setFont('Helvetica', 'bold');
+    doc.text('Bleu Bean Cafe', 105, 20, { align: 'center' }); // Centered
+    doc.setFontSize(12);
+    doc.setFont('Helvetica', 'normal');
+    doc.text(`${type.charAt(0).toUpperCase() + type.slice(1)} Sales Report`, 105, 28, { align: 'center' });
+    doc.text(`Date: ${reportDate}`, 105, 34, { align: 'center' });
+
+    // Section: Sales Summary
+    doc.setFontSize(13);
+    doc.setFont('Helvetica', 'bold');
+    doc.text('Sales Summary', 14, 50);
+    doc.setFont('Helvetica', 'normal');
+
+    autoTable(doc, {
+      startY: 54,
+      head: [['Metric', 'Amount']],
+      body: [
+        ['Total Sales', `₱${metrics.totalSales.toLocaleString()}`],
+        ['Cash Sales', `₱${metrics.cashSales.toLocaleString()}`],
+        ['GCash Sales', `₱${metrics.gcashSales.toLocaleString()}`],
+        ['Discounts Applied', `₱${metrics.discountsApplied.toLocaleString()}`],
+        ['Tax Amount', `₱${metrics.taxAmount.toLocaleString()}`],
+        ['Net Sales', `₱${metrics.netSales.toLocaleString()}`],
+        ['Items Sold', metrics.itemsSold.toLocaleString()],
+        ['Total Transactions', metrics.totalTransactions.toLocaleString()],
+        ['Average Transaction Value', `₱${metrics.averageTransactionValue.toFixed(2)}`]
+      ],
+      styles: {
+        fontSize: 11,
+        cellPadding: 3,
+      },
+      headStyles: {
+        fillColor: [230, 230, 230],
+        textColor: 0,
+        fontStyle: 'bold'
+      }
+    });
+
+    // Section: Cash Summary
+    doc.setFontSize(13);
+    doc.setFont('Helvetica', 'bold');
+    doc.text('Cash Summary', 14, doc.lastAutoTable.finalY + 10);
+    doc.setFont('Helvetica', 'normal');
+
+    autoTable(doc, {
+      startY: doc.lastAutoTable.finalY + 14,
+      head: [['Initial Cash', 'Cash Sales', 'Expected Cash', 'Actual Cash', 'Discrepancy']],
+      body: [[
+        `₱${initialCash.toFixed(2)}`,
+        `₱${cashSales.toFixed(2)}`,
+        `₱${expectedCash.toFixed(2)}`,
+        `₱${actualCash.toFixed(2)}`,
+        `${cashDiscrepancy >= 0 ? '+' : ''}₱${cashDiscrepancy.toFixed(2)}`
+      ]],
+      styles: {
+        fontSize: 11,
+        cellPadding: 3
+      },
+      headStyles: {
+        fillColor: [230, 230, 230],
+        textColor: 0,
+        fontStyle: 'bold'
+      }
+    });
+
+    // Save the file
+    const filename = `${reportDate.replace(/ /g, '_')}_${type}_sales_report.pdf`;
+    doc.save(filename);
+    closeExportModal();
+  };
+
+  const handleDateChange = (e) => {
+    const selectedDateValue = e.target.value;
+    // Only allow dates up to today
+    if (selectedDateValue <= todayString) {
+      setSelectedDate(selectedDateValue);
+    }
+  };
+
+  const renderExportModal = () => {
+    if (!showExportModal) return null;
+
+    return (
+      <div className="cashier-modal-overlay" onClick={closeExportModal}>
+        <div className="cashier-modal cashier-export-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="cashier-modal-header">
+            <h2>
+              <FontAwesomeIcon icon={faFileExport} /> Export Sales Report
+            </h2>
+            <button className="cashier-modal-close" onClick={closeExportModal}>
+              <FontAwesomeIcon icon={faTimes} />
+            </button>
+          </div>
+
+          <div className="cashier-modal-content">
+            <div className="cashier-export-options">
+              <div className="cashier-export-section">
+                <h3>Select Report Type</h3>
+                <div className="cashier-export-radio-group">
+                  <label className="cashier-export-radio">
+                    <input
+                      type="radio"
+                      name="reportType"
+                      value="daily"
+                      checked={reportType === 'daily'}
+                      onChange={(e) => setReportType(e.target.value)}
+                    />
+                    <span>Daily Report</span>
+                    <small>Sales data for the selected date</small>
+                  </label>
+                  <label className="cashier-export-radio">
+                    <input
+                      type="radio"
+                      name="reportType"
+                      value="weekly"
+                      checked={reportType === 'weekly'}
+                      onChange={(e) => setReportType(e.target.value)}
+                    />
+                    <span>Weekly Report</span>
+                    <small>Sales data for the week containing the selected date</small>
+                  </label>
+                  <label className="cashier-export-radio">
+                    <input
+                      type="radio"
+                      name="reportType"
+                      value="monthly"
+                      checked={reportType === 'monthly'}
+                      onChange={(e) => setReportType(e.target.value)}
+                    />
+                    <span>Monthly Report</span>
+                    <small>Sales data for the month containing the selected date</small>
+                  </label>
+                </div>
+              </div>
+
+              <div className="cashier-export-section">
+                <h3>Report Preview</h3>
+                <div className="cashier-export-preview">
+                  <div className="cashier-preview-item">
+                    <strong>Report Type:</strong> {reportType.charAt(0).toUpperCase() + reportType.slice(1)} Report
+                  </div>
+                  <div className="cashier-preview-item">
+                    <strong>Date Range:</strong> {new Date(selectedDate).toLocaleDateString()}
+                    {reportType === 'weekly' && ' (Week)'}
+                    {reportType === 'monthly' && ' (Month)'}
+                  </div>
+                  <div className="cashier-preview-item">
+                    <strong>Employee:</strong> {employeeName}
+                  </div>
+                </div>
+              </div>
+
+              <div className="cashier-export-actions">
+                <button 
+                  className="cashier-export-btn cashier-export-cancel"
+                  onClick={closeExportModal}
+                >
+                  Cancel
+                </button>
+                <button 
+                  className="cashier-export-btn cashier-export-generate"
+                  onClick={() => generatePDFReport(reportType)}
+                >
+                  <FontAwesomeIcon icon={faFilePdf} />
+                  Generate PDF Report
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   const renderModal = () => {
@@ -343,11 +569,20 @@ function CashierSales({ employeeName = "Lim Alcovendas", shiftLabel = "Morning S
                 <input 
                   type="date"
                   value={selectedDate} 
-                  onChange={(e) => setSelectedDate(e.target.value)}
+                  onChange={handleDateChange}
+                  max={todayString}
                   className="cashier-date-input"
                 />
               </div>
               <div className="cashier-employee">Employee: {employeeName}</div>
+              <button 
+                className="cashier-export-report-btn"
+                onClick={openExportModal}
+                title="Export Sales Report"
+              >
+                <FontAwesomeIcon icon={faDownload} />
+                Export Report
+              </button>
             </div>
           )}
         </div>
@@ -525,13 +760,14 @@ function CashierSales({ employeeName = "Lim Alcovendas", shiftLabel = "Morning S
                     </button>
                     </div>
                 </div>
-              </div>
+              </div>  
             </div>
           </div>
         )}
       </div>
 
       {renderModal()}
+      {renderExportModal()}
     </div>
   );
 }
