@@ -15,23 +15,14 @@ import {
   faCheckCircle,
   faCoins,
   faCashRegister,
-  faFileExport,
-  faFilePdf,
-  faDownload
 } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import jsPDF from 'jspdf';
-// FIX: Changed import style for jspdf-autotable to ensure it correctly
-// attaches itself to the jsPDF instance as a plugin.
-import 'jspdf-autotable';
 
 function CashierSales({ employeeName = "Lim Alcovendas", shiftLabel = "Morning Shift", shiftTime = "6:00AM – 2:00PM", date }) {
   const [activeTab, setActiveTab] = useState('summary');
   const [modalType, setModalType] = useState(null);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [reportType, setReportType] = useState('daily');
-  const [showExportModal, setShowExportModal] = useState(false);
-  
+
   // Cash drawer state
   const [cashCounts, setCashCounts] = useState({
     bills1000: 0,
@@ -89,28 +80,6 @@ function CashierSales({ employeeName = "Lim Alcovendas", shiftLabel = "Morning S
       icon: faShoppingCart,
     },
   ];
-
-  // Additional metrics for comprehensive reporting
-  const getReportMetrics = () => {
-    return {
-      totalSales: 10300.5,
-      cashSales: 6180.3,
-      gcashSales: 4120.2,
-      creditCardSales: 0,
-      totalTransactions: 28,
-      averageTransactionValue: 367.88,
-      discountsApplied: 450.00,
-      totalDiscountTransactions: 8,
-      taxAmount: 1545.08,
-      netSales: 8755.42,
-      refunds: 125.00,
-      voids: 0,
-      itemsSold: 74,
-      topPaymentMethod: 'Cash (60%)',
-      peakHour: '10:00 AM - 11:00 AM',
-      customerCount: 28
-    };
-  };
 
   // Cash denominations configuration
   const denominations = [
@@ -294,14 +263,6 @@ function CashierSales({ employeeName = "Lim Alcovendas", shiftLabel = "Morning S
     setModalType(null);
   };
 
-  const openExportModal = () => {
-    setShowExportModal(true);
-  };
-
-  const closeExportModal = () => {
-    setShowExportModal(false);
-  };
-
   const getFilteredData = (data) => {
     // In a real application, you would filter based on the selected date
     // For now, we'll just return all data
@@ -317,193 +278,13 @@ function CashierSales({ employeeName = "Lim Alcovendas", shiftLabel = "Morning S
     // This would typically save the count to the database
     alert('Cash count has been confirmed and saved.');
   };
-
-  const generatePDFReport = (type) => {
-    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-    const metrics = getReportMetrics();
-    const reportDate = new Date(selectedDate).toLocaleDateString('en-US', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    });
-
-    // Header
-    doc.setFontSize(16);
-    doc.setFont('Helvetica', 'bold');
-    doc.text('Bleu Bean Cafe', 105, 20, { align: 'center' }); // Centered
-    doc.setFontSize(12);
-    doc.setFont('Helvetica', 'normal');
-    doc.text(`${type.charAt(0).toUpperCase() + type.slice(1)} Sales Report`, 105, 28, { align: 'center' });
-    doc.text(`Date: ${reportDate}`, 105, 34, { align: 'center' });
-
-    // Section: Sales Summary
-    doc.setFontSize(13);
-    doc.setFont('Helvetica', 'bold');
-    doc.text('Sales Summary', 14, 50);
-    doc.setFont('Helvetica', 'normal');
-    
-    // FIX: Changed to use doc.autoTable, the plugin method.
-    doc.autoTable({
-      startY: 54,
-      head: [['Metric', 'Amount']],
-      body: [
-        ['Total Sales', `₱${metrics.totalSales.toLocaleString()}`],
-        ['Cash Sales', `₱${metrics.cashSales.toLocaleString()}`],
-        ['GCash Sales', `₱${metrics.gcashSales.toLocaleString()}`],
-        ['Discounts Applied', `₱${metrics.discountsApplied.toLocaleString()}`],
-        ['Tax Amount', `₱${metrics.taxAmount.toLocaleString()}`],
-        ['Net Sales', `₱${metrics.netSales.toLocaleString()}`],
-        ['Items Sold', metrics.itemsSold.toLocaleString()],
-        ['Total Transactions', metrics.totalTransactions.toLocaleString()],
-        ['Average Transaction Value', `₱${metrics.averageTransactionValue.toFixed(2)}`]
-      ],
-      styles: {
-        fontSize: 11,
-        cellPadding: 3,
-      },
-      headStyles: {
-        fillColor: [230, 230, 230],
-        textColor: 0,
-        fontStyle: 'bold'
-      }
-    });
-
-    // Section: Cash Summary
-    doc.setFontSize(13);
-    doc.setFont('Helvetica', 'bold');
-    doc.text('Cash Summary', 14, doc.lastAutoTable.finalY + 10);
-    doc.setFont('Helvetica', 'normal');
-
-    // FIX: Changed to use doc.autoTable, the plugin method.
-    doc.autoTable({
-      startY: doc.lastAutoTable.finalY + 14,
-      head: [['Initial Cash', 'Cash Sales', 'Expected Cash', 'Actual Cash', 'Discrepancy']],
-      body: [[
-        `₱${initialCash.toFixed(2)}`,
-        `₱${cashSales.toFixed(2)}`,
-        `₱${expectedCash.toFixed(2)}`,
-        `₱${actualCash.toFixed(2)}`,
-        `${cashDiscrepancy >= 0 ? '+' : ''}₱${cashDiscrepancy.toFixed(2)}`
-      ]],
-      styles: {
-        fontSize: 11,
-        cellPadding: 3
-      },
-      headStyles: {
-        fillColor: [230, 230, 230],
-        textColor: 0,
-        fontStyle: 'bold'
-      }
-    });
-
-    // Save the file
-    const filename = `${reportDate.replace(/ /g, '_')}_${type}_sales_report.pdf`;
-    doc.save(filename);
-    closeExportModal();
-  };
-
+  
   const handleDateChange = (e) => {
     const selectedDateValue = e.target.value;
     // Only allow dates up to today
     if (selectedDateValue <= todayString) {
       setSelectedDate(selectedDateValue);
     }
-  };
-
-  const renderExportModal = () => {
-    if (!showExportModal) return null;
-
-    return (
-      <div className="cashier-modal-overlay" onClick={closeExportModal}>
-        <div className="cashier-modal cashier-export-modal" onClick={(e) => e.stopPropagation()}>
-          <div className="cashier-modal-header">
-            <h2>
-              <FontAwesomeIcon icon={faFileExport} /> Export Sales Report
-            </h2>
-            <button className="cashier-modal-close" onClick={closeExportModal}>
-              <FontAwesomeIcon icon={faTimes} />
-            </button>
-          </div>
-
-          <div className="cashier-modal-content">
-            <div className="cashier-export-options">
-              <div className="cashier-export-section">
-                <h3>Select Report Type</h3>
-                <div className="cashier-export-radio-group">
-                  <label className="cashier-export-radio">
-                    <input
-                      type="radio"
-                      name="reportType"
-                      value="daily"
-                      checked={reportType === 'daily'}
-                      onChange={(e) => setReportType(e.target.value)}
-                    />
-                    <span>Daily Report</span>
-                    <small>Sales data for the selected date</small>
-                  </label>
-                  <label className="cashier-export-radio">
-                    <input
-                      type="radio"
-                      name="reportType"
-                      value="weekly"
-                      checked={reportType === 'weekly'}
-                      onChange={(e) => setReportType(e.target.value)}
-                    />
-                    <span>Weekly Report</span>
-                    <small>Sales data for the week containing the selected date</small>
-                  </label>
-                  <label className="cashier-export-radio">
-                    <input
-                      type="radio"
-                      name="reportType"
-                      value="monthly"
-                      checked={reportType === 'monthly'}
-                      onChange={(e) => setReportType(e.target.value)}
-                    />
-                    <span>Monthly Report</span>
-                    <small>Sales data for the month containing the selected date</small>
-                  </label>
-                </div>
-              </div>
-
-              <div className="cashier-export-section">
-                <h3>Report Preview</h3>
-                <div className="cashier-export-preview">
-                  <div className="cashier-preview-item">
-                    <strong>Report Type:</strong> {reportType.charAt(0).toUpperCase() + reportType.slice(1)} Report
-                  </div>
-                  <div className="cashier-preview-item">
-                    <strong>Date Range:</strong> {new Date(selectedDate).toLocaleDateString()}
-                    {reportType === 'weekly' && ' (Week)'}
-                    {reportType === 'monthly' && ' (Month)'}
-                  </div>
-                  <div className="cashier-preview-item">
-                    <strong>Employee:</strong> {employeeName}
-                  </div>
-                </div>
-              </div>
-
-              <div className="cashier-export-actions">
-                <button 
-                  className="cashier-export-btn cashier-export-cancel"
-                  onClick={closeExportModal}
-                >
-                  Cancel
-                </button>
-                <button 
-                  className="cashier-export-btn cashier-export-generate"
-                  onClick={() => generatePDFReport(reportType)}
-                >
-                  <FontAwesomeIcon icon={faFilePdf} />
-                  Generate PDF Report
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
   };
 
   const renderModal = () => {
@@ -526,12 +307,12 @@ function CashierSales({ employeeName = "Lim Alcovendas", shiftLabel = "Morning S
 
           <div className="cashier-modal-content">
             <div className="cashier-modal-table-container">
-              <DataTable 
+              <DataTable
                 columns={columns}
                 data={data}
-                striped 
-                highlightOnHover 
-                responsive 
+                striped
+                highlightOnHover
+                responsive
                 pagination
                 fixedHeader
                 fixedHeaderScrollHeight="60vh"
@@ -551,13 +332,13 @@ function CashierSales({ employeeName = "Lim Alcovendas", shiftLabel = "Morning S
       <div className="cashier-sales-container">
         <div className="cashier-tabs-header-row">
           <div className="cashier-sales-tabs">
-            <button 
+            <button
               className={`cashier-sales-tab ${activeTab === 'summary' ? 'active' : ''}`}
               onClick={() => setActiveTab('summary')}
             >
               Summary
             </button>
-            <button 
+            <button
               className={`cashier-sales-tab ${activeTab === 'cash' ? 'active' : ''}`}
               onClick={() => setActiveTab('cash')}
             >
@@ -570,23 +351,16 @@ function CashierSales({ employeeName = "Lim Alcovendas", shiftLabel = "Morning S
             <div className="cashier-sales-header">
               <div className="cashier-date">
                 <span>Date:</span>
-                <input 
+                <input
                   type="date"
-                  value={selectedDate} 
+                  value={selectedDate}
                   onChange={handleDateChange}
                   max={todayString}
                   className="cashier-date-input"
                 />
               </div>
               <div className="cashier-employee">Employee: {employeeName}</div>
-              <button 
-                className="cashier-export-report-btn"
-                onClick={openExportModal}
-                title="Export Sales Report"
-              >
-                <FontAwesomeIcon icon={faDownload} />
-                Export Report
-              </button>
+              {/* Export Button Removed */}
             </div>
           )}
         </div>
@@ -627,7 +401,7 @@ function CashierSales({ employeeName = "Lim Alcovendas", shiftLabel = "Morning S
               <div className="cashier-cancelled-section">
                 <div className="cashier-section-header">
                   <h3>Cancelled Products</h3>
-                  <button 
+                  <button
                     className="cashier-view-all-btn"
                     onClick={() => openModal('cancelled')}
                   >
@@ -635,12 +409,12 @@ function CashierSales({ employeeName = "Lim Alcovendas", shiftLabel = "Morning S
                   </button>
                 </div>
                 <div className="cashier-cancelled-table-container">
-                  <DataTable 
+                  <DataTable
                     columns={cancelledProductsColumns}
                     data={limitedCancelledProducts}
-                    striped 
-                    highlightOnHover 
-                    responsive 
+                    striped
+                    highlightOnHover
+                    responsive
                     noDataComponent={<div style={{ padding: "24px" }}>No cancelled products.</div>}
                     customStyles={customTableStyles}
                     pagination={false}
@@ -652,7 +426,7 @@ function CashierSales({ employeeName = "Lim Alcovendas", shiftLabel = "Morning S
             <div className="cashier-sales-side">
               <div className="cashier-section-header">
                 <h3>Top Selling Products</h3>
-                <button 
+                <button
                   className="cashier-view-all-btn"
                   onClick={() => openModal('topProducts')}
                 >
@@ -670,7 +444,7 @@ function CashierSales({ employeeName = "Lim Alcovendas", shiftLabel = "Morning S
                         <span>{product.sales}</span>
                       </div>
                     </div>
-                  ))}   
+                  ))}
               </div>
             </div>
           </div>
@@ -686,14 +460,14 @@ function CashierSales({ employeeName = "Lim Alcovendas", shiftLabel = "Morning S
                     <h2>Cash Drawer Count</h2>
                   </div>
                 </div>
-                
+
                 <div className="cashier-cash-table">
                   <div className="cashier-cash-table-header">
                     <span>Denomination</span>
                     <span>Count</span>
                     <span>Total Value</span>
                   </div>
-                  
+
                   {denominations.map((denom) => (
                     <div key={denom.key} className="cashier-cash-row">
                       <span className="cashier-denom-label">{denom.label}</span>
@@ -720,27 +494,27 @@ function CashierSales({ employeeName = "Lim Alcovendas", shiftLabel = "Morning S
                     <FontAwesomeIcon icon={faCoins} />
                     <h3>Cash Summary</h3>
                   </div>
-                  
+
                   <div className="cashier-summary-row">
                     <span>Initial Cash</span>
                     <span className="cashier-initial-amount">₱{initialCash.toFixed(2)}</span>
                   </div>
-                  
+
                   <div className="cashier-summary-row">
                     <span>Cash Sales</span>
                     <span className="cashier-sales-amount">₱{cashSales.toFixed(2)}</span>
                   </div>
-                  
+
                   <div className="cashier-summary-row">
                     <span>Expected Cash (Initial + Sales)</span>
                     <span className="cashier-expected-amount">₱{expectedCash.toFixed(2)}</span>
                   </div>
-                  
+
                   <div className="cashier-summary-row">
                     <span>Actual Cash (Counted)</span>
                     <span className="cashier-actual-amount">₱{actualCash.toFixed(2)}</span>
                   </div>
-                  
+
                   <div className={`cashier-summary-row cashier-discrepancy ${hasDiscrepancy ? 'has-discrepancy' : 'no-discrepancy'}`}>
                     <span className="cashier-discrepancy-label">
                       <FontAwesomeIcon icon={hasDiscrepancy ? faExclamationTriangle : faCheckCircle} />
@@ -750,7 +524,7 @@ function CashierSales({ employeeName = "Lim Alcovendas", shiftLabel = "Morning S
                       {cashDiscrepancy >= 0 ? '+' : ''}₱{cashDiscrepancy.toFixed(2)}
                     </span>
                   </div>
-                  
+
                   <div className="cashier-action-buttons">
                     {hasDiscrepancy && (
                       <button className="cashier-report-btn" onClick={handleReportDiscrepancy}>
@@ -762,16 +536,16 @@ function CashierSales({ employeeName = "Lim Alcovendas", shiftLabel = "Morning S
                       <FontAwesomeIcon icon={faCheckCircle} />
                       Confirm Count
                     </button>
-                    </div>
+                  </div>
                 </div>
-              </div>  
+              </div>
             </div>
           </div>
         )}
       </div>
 
       {renderModal()}
-      {renderExportModal()}
+      {/* renderExportModal call removed */}
     </div>
   );
 }
