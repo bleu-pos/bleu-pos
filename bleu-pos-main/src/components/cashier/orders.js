@@ -4,6 +4,9 @@ import Navbar from "../navbar";
 import DataTable from "react-data-table-component";
 import OrderPanel from "./orderPanel";
 
+// --- For easy configuration, define the base URL for your sales service ---
+const API_BASE_URL = 'http://127.0.0.1:9000'; // Replace with your Sales Service port if different
+
 function Orders() {
   const [activeTab, setActiveTab] = useState("store");
   const [searchText, setSearchText] = useState("");
@@ -11,118 +14,85 @@ function Orders() {
   const [filterStatus, setFilterStatus] = useState("");
   const [selectedOrder, setSelectedOrder] = useState(null);
 
-  // State for username, retrieved from local storage
   const [username, setUsername] = useState('');
-
-  // State will now be populated by the API call
   const [storeOrders, setStoreOrders] = useState([]);
   const [onlineOrders, setOnlineOrders] = useState([]);
-
-  // State for loading and error handling
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   
-  // Get username from local storage on component mount
   useEffect(() => {
-    // Ensure the key 'username' matches what your login process saves.
     const storedUsername = localStorage.getItem('username'); 
     if (storedUsername) {
       setUsername(storedUsername);
     }
-  }, []); // Empty dependency array ensures this runs only once on mount
+  }, []);
 
-  // Helper function to get local date string in YYYY-MM-DD format
   const getLocalDateString = useCallback((date) => {
-    if (!(date instanceof Date) || isNaN(date)) {
-      return null;
-    }
+    if (!(date instanceof Date) || isNaN(date)) return null;
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
   }, []);
 
-  // Helper function to get today's date in local timezone
   const getTodayLocalDate = useCallback(() => {
     return getLocalDateString(new Date());
   }, [getLocalDateString]);
 
-  // Fetch orders from the API on component mount and at regular intervals
-  useEffect(() => {
-    const fetchOrders = async () => {
-      // Don't show the main "Loading..." text on background refreshes
-      if (storeOrders.length === 0 && onlineOrders.length === 0) {
-        setLoading(true);
+  // --- REFACTORED fetchOrders into a useCallback hook for reusability ---
+  const fetchOrders = useCallback(async () => {
+    // Don't show the main "Loading..." text on background refreshes
+    if (storeOrders.length === 0 && onlineOrders.length === 0) {
+      setLoading(true);
+    }
+    setError(null);
+    
+    try {
+      const token = localStorage.getItem('authToken');
+      if (!token) throw new Error("Authentication error: You must be logged in to view orders.");
+
+      const headers = { 'Authorization': `Bearer ${token}` };
+      const response = await fetch(`${API_BASE_URL}/auth/purchase_orders/status/processing`, { headers });
+
+      if (response.status === 401 || response.status === 403) {
+         throw new Error('Authorization failed. Your session may have expired. Please log in again.');
       }
-      setError(null);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
       
-      try {
-        // 1. Get the authentication token from local storage.
-        //    Ensure the key 'authToken' matches what your login process saves.
-        const token = localStorage.getItem('authToken');
+      const data = await response.json();
+      const orders = Array.isArray(data) ? data : [];
+      const transformedOrders = orders.map(order => ({
+        ...order,
+        status: order.status ? order.status.toUpperCase() : 'UNKNOWN',
+        items: order.items || (order.orderItems ? order.orderItems.reduce((acc, item) => acc + item.quantity, 0) : 0),
+        orderItems: order.orderItems ? order.orderItems.map(item => ({...item, size: item.size || 'Standard', extras: item.extras || []})) : [],
+        localDateString: getLocalDateString(new Date(order.date)),
+        dateDisplay: new Date(order.date).toLocaleString("en-US", { month: "long", day: "2-digit", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true }),
+      }));
 
-        // 2. If no token is found, stop the process and show an error.
-        if (!token) {
-          throw new Error("Authentication error: You must be logged in to view orders.");
-        }
+      const sortedOrders = transformedOrders.sort((a, b) => new Date(b.date) - new Date(a.date));
+      const newStoreOrders = sortedOrders.filter(o => o.orderType === 'Dine in' || o.orderType === 'Take out');
+      const newOnlineOrders = sortedOrders.filter(o => o.orderType !== 'Dine in' && o.orderType !== 'Take out');
 
-        // 3. Create the headers for the fetch request.
-        const headers = {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        };
+      setStoreOrders(newStoreOrders);
+      setOnlineOrders(newOnlineOrders);
 
-        // 4. Make the fetch call with the new headers.
-        const response = await fetch('http://127.0.0.1:9000/auth/purchase_orders/status/processing', { headers });
-
-        // Handle specific auth errors like an expired token
-        if (response.status === 401 || response.status === 403) {
-           throw new Error('Authorization failed. Your session may have expired. Please log in again.');
-        }
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const data = await response.json();
-        const orders = Array.isArray(data) ? data : [];
-
-        // Transform API data to match the component's expected structure
-        const transformedOrders = orders.map(order => ({
-          ...order,
-          status: order.status ? order.status.toUpperCase() : 'UNKNOWN',
-          items: order.items || (order.orderItems ? order.orderItems.reduce((acc, item) => acc + item.quantity, 0) : 0),
-          orderItems: order.orderItems ? order.orderItems.map(item => ({...item, size: item.size || 'Standard', extras: item.extras || []})) : [],
-          localDateString: getLocalDateString(new Date(order.date)),
-          dateDisplay: new Date(order.date).toLocaleString("en-US", {
-            month: "long", day: "2-digit", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true,
-          }),
-        }));
-
-        // Sort orders by date (most recent first) before segregating
-        const sortedOrders = transformedOrders.sort((a, b) => new Date(b.date) - new Date(a.date));
-
-        // Segregate orders into "Store" and "Online" based on orderType
-        const newStoreOrders = sortedOrders.filter(o => o.orderType === 'Dine in' || o.orderType === 'Take out');
-        const newOnlineOrders = sortedOrders.filter(o => o.orderType !== 'Dine in' && o.orderType !== 'Take out');
-
-        setStoreOrders(newStoreOrders);
-        setOnlineOrders(newOnlineOrders);
-
-      } catch (e) {
-        console.error("Failed to fetch orders:", e);
-        setError(e.message || "Failed to load orders. Please check connection and try again.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchOrders(); // Initial fetch
-    
-    // Set up an interval to automatically refresh orders
-    const interval = setInterval(fetchOrders, 5000); // Refresh every 5 seconds
-    
-    return () => clearInterval(interval); // Cleanup on component unmount
+    } catch (e) {
+      console.error("Failed to fetch orders:", e);
+      setError(e.message || "Failed to load orders. Please check connection and try again.");
+    } finally {
+      setLoading(false);
+    }
   }, [getLocalDateString, storeOrders.length, onlineOrders.length]);
+
+  // Fetch orders on component mount and set up an interval
+  useEffect(() => {
+    fetchOrders(); // Initial fetch
+    const interval = setInterval(fetchOrders, 5000); // Refresh every 5 seconds
+    return () => clearInterval(interval); // Cleanup on component unmount
+  }, [fetchOrders]);
 
 
   const getMostRecentOrderDate = useCallback((orders) => {
@@ -133,7 +103,6 @@ function Orders() {
   }, []);
 
   const ordersData = activeTab === "store" ? storeOrders : onlineOrders;
-
   const filteredData = ordersData.filter(order => {
     const text = searchText.toLowerCase();
     const matchesSearch =
@@ -145,40 +114,51 @@ function Orders() {
     const matchesStatus = filterStatus ? order.status === filterStatus : true;
 
     return matchesSearch && matchesDate && matchesStatus;
-  }).sort((a, b) => new Date(b.date) - new Date(a.date)); // Sort filtered data by date (most recent first)
+  }).sort((a, b) => new Date(b.date) - new Date(a.date));
 
-  useEffect(() => {
-    if (ordersData.length > 0 && filteredData.length === 0 && !searchText && !filterStatus) {
-      const mostRecentDate = getMostRecentOrderDate(ordersData);
-      if (mostRecentDate && mostRecentDate !== filterDate) {
-        setFilterDate(mostRecentDate);
+  // --- NEW: The function that makes the API call to update status ---
+  const handleUpdateStatus = async (orderId, newStatus) => {
+    const token = localStorage.getItem('authToken');
+    if (!token) {
+      alert("Authentication error. Please log in again.");
+      return;
+    }
+
+    // The API expects 'completed' or 'cancelled' (all lowercase)
+    const statusPayload = newStatus.toLowerCase();
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/purchase_orders/${orderId}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ newStatus: statusPayload }),
+      });
+      
+      const responseData = await response.json();
+      if (!response.ok) {
+        throw new Error(responseData.detail || 'Failed to update order status.');
       }
-    }
-  }, [ordersData, filteredData, searchText, filterStatus, filterDate, getMostRecentOrderDate]);
 
-  const clearFilters = () => {
-    setSearchText("");
-    setFilterDate(getTodayLocalDate());
-    setFilterStatus("");
-  };
-  
-  const handleUpdateStatus = (orderId, newStatus) => {
-    const updateOrderList = (orders) => orders.map(order =>
-      order.id === orderId ? { ...order, status: newStatus } : order
-    );
+      // Success!
+      alert(responseData.message); // Show success message from API
+      
+      // Refresh the list of orders to reflect the change
+      await fetchOrders(); 
+      
+      // Close the order panel for a better user experience
+      setSelectedOrder(null);
 
-    if (activeTab === "store") {
-      setStoreOrders(updateOrderList(storeOrders));
-    } else {
-      setOnlineOrders(updateOrderList(onlineOrders));
-    }
-
-    if (selectedOrder && selectedOrder.id === orderId) {
-      setSelectedOrder(prev => ({ ...prev, status: newStatus }));
+    } catch (err) {
+      console.error("Error updating status:", err);
+      alert(`Error: ${err.message}`);
     }
   };
 
   const handleCompleteOrder = (orderId) => {
+    // This now correctly calls the real API update function
     handleUpdateStatus(orderId, "COMPLETED");
   };
 
@@ -187,19 +167,24 @@ function Orders() {
     { name: "DATE & TIME", selector: (row) => row.dateDisplay, sortable: true, width: "25%" },
     { name: "ITEMS", selector: (row) => `${row.items} Items`, sortable: true, width: "20%" },
     { name: "TOTAL", selector: (row) => `₱${row.total.toFixed(2)}`, sortable: true, width: "20%" },
-    {
-      name: "STATUS", selector: (row) => row.status,
+    { name: "STATUS", selector: (row) => row.status,
       cell: (row) => (<span className={`orderpanel-status-badge ${row.status === "COMPLETED" ? "orderpanel-completed" : row.status === "REQUEST TO ORDER" ? "orderpanel-request" : row.status === "PROCESSING" ? "orderpanel-processing" : row.status === "FOR PICK UP" ? "orderpanel-forpickup" : "orderpanel-cancelled"}`}>{row.status}</span>),
       width: "15%",
     },
   ];
+
+  const clearFilters = () => {
+    setSearchText("");
+    setFilterDate(getTodayLocalDate());
+    setFilterStatus("");
+  };
 
   const handleTabChange = (tab) => {
     setActiveTab(tab);
     clearFilters();
     setSelectedOrder(null);
   };
-
+  
   useEffect(() => {
     if (filteredData.length > 0) {
       if (!selectedOrder || !filteredData.find(o => o.id === selectedOrder.id)) {
@@ -228,7 +213,6 @@ function Orders() {
 
   return (
     <div className="orders-main-container">
-      {/* The username state is passed here. The Navbar component can now use it. */}
       <Navbar isOrderPanelOpen={true} username={username} />
       <div className="orders-content-container orders-panel-open">
         <div className="orders-tab-container">
@@ -274,38 +258,10 @@ function Orders() {
                 </div>
               }
               customStyles={{
-              headCells: {
-                  style: {
-                  backgroundColor: "#4B929D",
-                  color: "#fff",
-                  fontWeight: "600",
-                  fontSize: "14px",     // Increased font size
-                  padding: "15px",
-                  textTransform: "uppercase",
-                  textAlign: "center",
-                  letterSpacing: "1px",
-                  },
-              },
-              header: {
-                  style: {
-                  minHeight: "60px",
-                  paddingTop: "5px",
-                  paddingBottom: "5px",
-                  },
-              },
-              rows: {
-                  style: {
-                  minHeight: "60px",
-                  padding: "10px",
-                  fontSize: "14px",     // Increased row text size
-                  color: "#333",
-                  },
-              },
-              cells: {
-                  style: {
-                  fontSize: "14px",     // Also apply size to individual cells
-                  },
-              },
+                headCells: { style: { backgroundColor: "#4B929D", color: "#fff", fontWeight: "600", fontSize: "14px", padding: "15px", textTransform: "uppercase", textAlign: "center", letterSpacing: "1px" } },
+                header: { style: { minHeight: "60px", paddingTop: "5px", paddingBottom: "5px" } },
+                rows: { style: { minHeight: "60px", padding: "10px", fontSize: "14px", color: "#333" } },
+                cells: { style: { fontSize: "14px" } },
               }}
             />
           )}
@@ -315,7 +271,7 @@ function Orders() {
           <OrderPanel
             order={selectedOrder}
             isOpen={true}
-            onClose={() => setSelectedOrder(filteredData[0] || null)}
+            onClose={() => setSelectedOrder(null)} // Simplified onClose for better UX
             isStore={activeTab === 'store'}
             onCompleteOrder={handleCompleteOrder}
             onUpdateStatus={handleUpdateStatus}

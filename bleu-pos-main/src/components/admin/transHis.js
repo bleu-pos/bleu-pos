@@ -7,6 +7,51 @@ import DataTable from "react-data-table-component";
 
 const getAuthToken = () => localStorage.getItem("authToken");
 
+// --- CHANGED: Define the API URL for easy access
+const API_URL = "http://127.0.0.1:9000/auth/purchase_orders/all";
+
+// --- CHANGED: Create a function to transform API data into the format the component expects
+const transformApiData = (apiTransaction) => {
+  // Calculate the subtotal from the order items
+  const subtotal = apiTransaction.orderItems.reduce(
+    (acc, item) => acc + item.price * item.quantity,
+    0
+  );
+
+  // Calculate the discount amount
+  const discount = subtotal - apiTransaction.total;
+
+  return {
+    id: apiTransaction.id,
+    // Convert the API's friendly date string to a standard ISO string for reliable filtering/sorting
+    date: new Date(apiTransaction.date).toISOString(), 
+    orderType: apiTransaction.orderType,
+    // Map the API's `orderItems` to the `items` array the component uses
+    items: apiTransaction.orderItems.map(item => ({
+      name: item.name,
+      quantity: item.quantity,
+      price: item.price,
+      details: item.addons && Object.values(item.addons).some(v => v > 0) 
+        ? "Includes add-ons" 
+        : undefined,
+    })),
+    total: apiTransaction.total,
+    subtotal: subtotal,
+    discount: discount,
+    // Normalize status to start with a capital letter, like the sample data
+    status: apiTransaction.status.charAt(0).toUpperCase() + apiTransaction.status.slice(1),
+    paymentMethod: apiTransaction.paymentMethod,
+    // The '/all' endpoint is for store transactions. We can set the type here.
+    type: "store", 
+    // The API doesn't provide detailed discount names, so we'll provide a default
+    discountsAndPromotions: discount > 0 ? "Discount Applied" : "None",
+    // Keep the original fields for the modal
+    cashierName: apiTransaction.cashierName,
+    GCashReferenceNumber: apiTransaction.GCashReferenceNumber,
+  };
+};
+
+
 function TransactionHistory() {
   const navigate = useNavigate();
   
@@ -20,102 +65,36 @@ function TransactionHistory() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [filterDate, setFilterDate] = useState("");
 
-  const sampleTransactions = [
-    {
-      id: "ST-067",
-      date: "2025-06-23T11:36:00Z",
-      orderType: "Dine in",
-      items: [{ name: "Matcha Frappe", quantity: 1, price: 145, code: "₱145" }],
-      total: 145,
-      subtotal: 145,
-      discount: 0,
-      status: "Completed",
-      paymentMethod: "Cash",
-      type: "store",
-      discountsAndPromotions: "None"
-    },
-    {
-      id: "ON-034",
-      date: "2025-06-23T14:45:00Z",
-      orderType: "Delivery",
-      items: [
-        { name: "Iced Americano", quantity: 2, price: 120, code: "₱120" },
-        { name: "Chocolate Croissant", quantity: 1, price: 85, code: "₱85" },
-        { name: "Cappuccino", quantity: 1, price: 110, code: "₱110" },
-        { name: "Blueberry Muffin", quantity: 2, price: 75, code: "₱75" }
-      ],
-      total: 325,
-      subtotal: 325,
-      discount: 0,
-      status: "Completed",
-      paymentMethod: "Card",
-      type: "online",
-      discountsAndPromotions: "None"
-    },
-    {
-      id: "ST-068",
-      date: "2025-06-23T16:20:00Z",
-      orderType: "Take out",
-      items: [
-        { name: "Cappuccino", quantity: 1, price: 110, code: "₱110" },
-        { name: "Blueberry Muffin", quantity: 2, price: 75, code: "₱75" }
-      ],
-      total: 260,
-      subtotal: 285,
-      discount: 25,
-      status: "Processing",
-      paymentMethod: "GCash",
-      referenceNumber: "GC-2025062316200001",
-      type: "store",
-      discountsAndPromotions: "Student Discount - 10%"
-    },
-    {
-      id: "ON-035",
-      date: "2025-06-23T18:15:00Z",
-      orderType: "For Pickup",
-      items: [
-        { name: "Vanilla Latte", quantity: 1, price: 135, code: "₱135" },
-        { name: "Caesar Salad", quantity: 1, price: 185, code: "₱185" }
-      ],
-      total: 320,
-      subtotal: 320,
-      discount: 0,
-      status: "Processing",
-      paymentMethod: "Digital Wallet",
-      type: "online",
-      discountsAndPromotions: "None"
-    },
-    {
-      id: "ST-069",
-      date: "2025-06-24T09:30:00Z",
-      orderType: "Dine in",
-      items: [
-        { name: "Club Sandwich", quantity: 1, price: 165, code: "₱165" },
-        { 
-          name: "Americano", quantity: 1, price: 205, code: "₱205", 
-          details: "1 Espresso Shot(s) (+₱50) · 1 Sea Salt Cream (+₱30) · 1 Syrup/Sauce(s) (+₱20)" 
-        }
-      ],
-      total: 296,
-      subtotal: 370,
-      discount: 74,
-      status: "Completed",
-      paymentMethod: "GCash",
-      referenceNumber: "GC-2025062409300001",
-      type: "store",
-      discountsAndPromotions: "Senior Citizen"
-    }
-  ];
+  // --- REMOVED: The old sampleTransactions array is no longer needed ---
 
+  // --- CHANGED: Updated fetchTransactions to call the real API
   const fetchTransactions = useCallback(async (token) => {
+    setIsLoading(true);
+    setError(null);
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      setTransactions(sampleTransactions);
+      const response = await fetch(API_URL, {
+        headers: {
+          "Authorization": `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      // Transform the API data before setting the state
+      const transformedData = data.map(transformApiData);
+      setTransactions(transformedData);
+
     } catch (err) {
-      console.error(err);
-      setError(err.message);
+      console.error("Failed to fetch transactions:", err);
+      setError("Failed to load transaction data. Please check the connection and try again.");
+    } finally {
+      setIsLoading(false);
     }
-  }, []);
+  }, []); // The URL is constant, so no dependencies needed here
 
   useEffect(() => {
     const token = getAuthToken();
@@ -123,24 +102,17 @@ function TransactionHistory() {
       navigate('/');
       return;
     }
-    setIsLoading(true);
-    fetchTransactions(token)
-      .catch(err => {
-        console.error("Error during data fetching:", err);
-        setError("Could not load transaction data.");
-      })
-      .finally(() => {
-        setIsLoading(false);
-      });
+    fetchTransactions(token);
   }, [navigate, fetchTransactions]);
 
   const filteredTransactions = useMemo(() => {
+    // This filtering logic now works perfectly with the transformed data
     return transactions.filter(transaction => {
-      const matchesTab = activeTab === "store" ? transaction.type === "store" : transaction.type === "online";
-      const matchesSearch = (transaction.id || '').toString().includes(searchTerm);
+      // For this implementation, all transactions are 'store' type from the '/all' endpoint
+      const matchesTab = activeTab === "store"; 
+      const matchesSearch = (transaction.id || '').toString().toLowerCase().includes(searchTerm.toLowerCase());
       const matchesStatus = statusFilter === "" || transaction.status === statusFilter;
 
-      // Date filtering - compare only the date part (YYYY-MM-DD)
       const transactionDate = new Date(transaction.date).toISOString().slice(0, 10);
       const matchesDate = filterDate === "" || transactionDate === filterDate;
 
@@ -155,16 +127,9 @@ function TransactionHistory() {
   }, [activeTab]);
 
   const uniqueStatuses = useMemo(() => {
-    const currentTabTransactions = transactions.filter(transaction => 
-      activeTab === "store" ? transaction.type === "store" : transaction.type === "online"
-    );
-    return [...new Set(currentTabTransactions.map(item => item.status).filter(Boolean))];
-  }, [activeTab, transactions]);
+    return [...new Set(transactions.map(item => item.status).filter(Boolean))];
+  }, [transactions]);
 
-  useEffect(() => {
-    setStatusFilter("");
-    setSearchTerm("");
-  }, [activeTab]);
 
   const handleRowClick = (row) => {
     setSelectedTransaction(row);
@@ -230,6 +195,7 @@ function TransactionHistory() {
         
         <div className="transHis-content">
           <div className="tabs">
+            {/* The online tab is kept for UI but will show no data until its API is added */}
             <button className={`tab ${activeTab === "store" ? "active-tab" : ""}`} onClick={() => setActiveTab("store")}>Store</button>
             <button className={`tab ${activeTab === "online" ? "active-tab" : ""}`} onClick={() => setActiveTab("online")}>Online</button>
           </div>
@@ -257,9 +223,9 @@ function TransactionHistory() {
             </div>
             
             {isLoading ? (
-              <p>Loading Transactions...</p>
+              <p style={{ textAlign: "center", padding: "20px" }}>Loading Transactions...</p>
             ) : error ? (
-              <div style={{ color: "red" }}>Error: {error}</div>
+              <div style={{ color: "red", textAlign: "center", padding: "20px" }}>Error: {error}</div>
             ) : (
               <div className="transactions-table-container">
                 <DataTable 
@@ -273,16 +239,16 @@ function TransactionHistory() {
                   fixedHeaderScrollHeight="60vh"
                   onRowClicked={handleRowClick}
                   pointerOnHover
-                  noDataComponent={<div style={{ padding: "24px" }}>No transactions found for {activeTab} transactions.</div>}
+                  noDataComponent={<div style={{ padding: "24px" }}>No transactions found.</div>}
                   conditionalRowStyles={[
-                  {
-                    when: row => selectedTransaction && row.id === selectedTransaction.id,
-                    style: {
-                      backgroundColor: "#e9f9ff",
-                      boxShadow: "inset 0 0 0 1px #2a9fbf",
+                    {
+                      when: row => selectedTransaction && row.id === selectedTransaction.id,
+                      style: {
+                        backgroundColor: "#e9f9ff",
+                        boxShadow: "inset 0 0 0 1px #2a9fbf",
+                      },
                     },
-                  },
-                ]}
+                  ]}
                   customStyles={{
                     headCells: {
                       style: {
@@ -310,6 +276,7 @@ function TransactionHistory() {
           </div>
         </div>
 
+        {/* --- CHANGED: Modal now correctly displays API data --- */}
         {isModalOpen && selectedTransaction && (
           <div className="modal-backdrop" onClick={closeModal}>
             <div className="modal-container" onClick={(e) => e.stopPropagation()}>
@@ -337,15 +304,23 @@ function TransactionHistory() {
                     </div>
                     <div className="modal-col">
                       <label>Date & Time:</label>
+                      {/* Use the original date string for full detail */}
                       <span>{new Date(selectedTransaction.date).toLocaleString()}</span>
                     </div>
                   </div>
+                   <div className="modal-row">
+                      <div className="modal-col">
+                        <label>Cashier:</label>
+                        <span>{selectedTransaction.cashierName}</span>
+                      </div>
+                    </div>
 
-                  {selectedTransaction.paymentMethod === "GCash" && selectedTransaction.referenceNumber && (
+                  {/* Check for the correct property name from the API */}
+                  {selectedTransaction.paymentMethod === "GCash" && selectedTransaction.GCashReferenceNumber && (
                     <div className="modal-row">
                       <div className="modal-col">
-                        <label>Reference Number:</label>
-                        <span>{selectedTransaction.referenceNumber}</span>
+                        <label>GCash Reference #:</label>
+                        <span>{selectedTransaction.GCashReferenceNumber}</span>
                       </div>
                     </div>
                   )}
@@ -361,7 +336,7 @@ function TransactionHistory() {
                           <div className="item-qty">Qty: {item.quantity}</div>
                           {item.details && <div className="item-details">{item.details}</div>}
                         </div>
-                        <div className="item-price">₱{(item.price * item.quantity).toFixed(0)}</div>
+                        <div className="item-price">₱{(item.price * item.quantity).toFixed(2)}</div>
                       </div>
                     ))}
                   </div>
@@ -380,17 +355,17 @@ function TransactionHistory() {
                   <div className="bill-summary">
                     <div className="bill-row">
                       <span>Subtotal:</span>
-                      <span>₱{selectedTransaction.subtotal}</span>
+                      <span>₱{selectedTransaction.subtotal.toFixed(2)}</span>
                     </div>
                     {selectedTransaction.discount > 0 && (
                       <div className="bill-row discount-row">
                         <span>Discount:</span>
-                        <span>-₱{selectedTransaction.discount}</span>
+                        <span>-₱{selectedTransaction.discount.toFixed(2)}</span>
                       </div>
                     )}
                     <div className="bill-row total-row">
                       <span>Total Amount:</span>
-                      <span>₱{selectedTransaction.total}</span>
+                      <span>₱{selectedTransaction.total.toFixed(2)}</span>
                     </div>
                   </div>
                 </div>

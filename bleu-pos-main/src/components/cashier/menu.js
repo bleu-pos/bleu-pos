@@ -3,9 +3,9 @@ import Navbar from '../navbar';
 import CartPanel from './cartPanel.js';
 import './menu.css';
 
-const API_BASE_URL = 'https://product-services-1.onrender.com';
+const API_BASE_URL = 'http://127.0.0.1:8001';
 
-function Menu() { 
+function Menu() {
   // State for UI and Cart
   const [selectedFilter, setSelectedFilter] = useState({ type: 'all', value: 'All Products' });
   const [cartItems, setCartItems] = useState([]);

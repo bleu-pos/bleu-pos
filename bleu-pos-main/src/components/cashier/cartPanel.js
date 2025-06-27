@@ -11,7 +11,6 @@ import {
   OrderConfirmationModal 
 } from './cartModals';
 
-// --- FIX: Swapped the API URLs to point to the correct servers ---
 const SALES_API_URL = 'http://127.0.0.1:9000';
 const DISCOUNTS_API_URL = 'http://127.0.0.1:9002';
 
@@ -42,7 +41,6 @@ const CartPanel = ({
   const [stagedDiscounts, setStagedDiscounts] = useState([]);
   const [showTransactionSummary, setShowTransactionSummary] = useState(false);
   const [showGCashReference, setShowGCashReference] = useState(false);
-  const [gcashReference, setGCashReference] = useState('');
   const [availableDiscounts, setAvailableDiscounts] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -52,7 +50,7 @@ const CartPanel = ({
   // Fetch active discounts from the backend when the cart is opened
   useEffect(() => {
     const fetchDiscounts = async () => {
-      if (!isCartOpen || availableDiscounts.length > 0) {
+      if (!isCartOpen) {
         return;
       }
 
@@ -67,8 +65,7 @@ const CartPanel = ({
       }
 
       try {
-        // This now correctly points to http://127.0.0.1:9002/discounts
-        const response = await fetch(`${DISCOUNTS_API_URL}/discounts?active_only=true`, {
+        const response = await fetch(`${DISCOUNTS_API_URL}/api/discounts/`, {
           headers: {
             'Authorization': `Bearer ${token}`
           }
@@ -81,16 +78,22 @@ const CartPanel = ({
 
         const data = await response.json();
 
-        const mappedDiscounts = data.map(d => ({
-          id: d.DiscountName,
-          name: d.DiscountName,
-          type: d.DiscountType.toLowerCase(),
-          value: d.DiscountType === 'Percentage' ? d.PercentageValue : d.FixedValue,
-          description: d.Description,
-          minAmount: d.MinimumSpend || 0,
-        }));
+        // --- MODIFIED: Adapt to the richer data structure from your backend ---
+        const mappedAndFilteredDiscounts = data
+          .filter(d => d.status === 'active')
+          .map(d => ({
+            id: d.name, 
+            name: d.name,
+            type: d.type === 'fixed_amount' ? 'fixed' : d.type,
+            value: parseFloat(d.discount.replace(/[^0-9.]/g, '')),
+            minAmount: d.minSpend || 0,
+            // --- NEW: Store the applicability rules from the backend ---
+            applicationType: d.application_type,
+            applicableProducts: d.applicable_products,
+            applicableCategories: d.applicable_categories,
+          }));
 
-        setAvailableDiscounts(mappedDiscounts);
+        setAvailableDiscounts(mappedAndFilteredDiscounts);
 
       } catch (err) {
         setError(err.message);
@@ -102,7 +105,40 @@ const CartPanel = ({
     
     fetchDiscounts();
 
-  }, [isCartOpen, availableDiscounts.length]);
+  }, [isCartOpen]);
+
+  // --- NEW: Helper function to check if a discount is applicable to the current cart ---
+  const isDiscountApplicable = (discount) => {
+    const subtotal = getSubtotal();
+    
+    // 1. Check minimum spend first.
+    if (subtotal < discount.minAmount) {
+      return false;
+    }
+
+    // 2. Check the application type based on the rules.
+    switch (discount.applicationType) {
+      case 'all_products':
+        return true;
+      
+      case 'specific_products':
+        // Returns true if at least one item in the cart matches a product in the discount's list.
+        return cartItems.some(cartItem => 
+          discount.applicableProducts.includes(cartItem.name)
+        );
+        
+      case 'specific_categories':
+        // Returns true if at least one item in the cart matches a category in the discount's list.
+        return cartItems.some(cartItem => 
+          discount.applicableCategories.includes(cartItem.category)
+        );
+
+      default:
+        // If the application type is unknown, it's not applicable.
+        return false;
+    }
+  };
+
 
   const openAddonsModal = (itemIndex) => {
     setSelectedItemIndex(itemIndex);
@@ -132,7 +168,17 @@ const CartPanel = ({
     setStagedDiscounts([]);
   };
 
+  // --- MODIFIED: This function now enforces the applicability rules ---
   const toggleStagedDiscount = (discountId) => {
+    const discount = availableDiscounts.find(d => d.id === discountId);
+    
+    // If the discount is not found or is not applicable, do nothing.
+    // This prevents the user from checking the box.
+    if (!discount || !isDiscountApplicable(discount)) {
+      return; 
+    }
+
+    // If the check passes, proceed with the original logic.
     setStagedDiscounts(prev => {
       if (prev.includes(discountId)) {
         return prev.filter(id => id !== discountId);
@@ -174,7 +220,6 @@ const CartPanel = ({
       setAvailableDiscounts([]);
       setPaymentMethod('Cash');
       setOrderType('Dine in');
-      setGCashReference('');
     }
   }, [isCartOpen, setCartItems, setPaymentMethod, setOrderType]);
 
@@ -184,11 +229,14 @@ const CartPanel = ({
     return Object.entries(itemAddons).reduce((total, [addon, quantity]) => total + getAddonPrice(addon, quantity), 0);
   };
   const getSubtotal = () => cartItems.reduce((acc, item) => (acc + (item.price * item.quantity) + (getTotalAddonsPrice(item.addons) * item.quantity)), 0);
-  const getDiscount = () => {
+
+  // --- MODIFIED: Create a single, reusable function for discount calculation ---
+  const calculateDiscount = (discountList) => {
     const subtotal = getSubtotal();
-    let totalDiscount = appliedDiscounts.reduce((acc, discountId) => {
+    let totalDiscount = discountList.reduce((acc, discountId) => {
         const discount = availableDiscounts.find(d => d.id === discountId);
-        if (discount && (!discount.minAmount || subtotal >= discount.minAmount)) {
+        // Only include the discount in the calculation if it's currently applicable.
+        if (discount && isDiscountApplicable(discount)) {
             if (discount.type === 'percentage') return acc + (subtotal * parseFloat(discount.value)) / 100;
             if (discount.type === 'fixed') return acc + parseFloat(discount.value);
         }
@@ -196,18 +244,10 @@ const CartPanel = ({
     }, 0);
     return Math.min(totalDiscount, subtotal);
   };
-  const getStagedDiscount = () => {
-    const subtotal = getSubtotal();
-    let totalDiscount = stagedDiscounts.reduce((acc, discountId) => {
-        const discount = availableDiscounts.find(d => d.id === discountId);
-        if (discount && (!discount.minAmount || subtotal >= discount.minAmount)) {
-            if (discount.type === 'percentage') return acc + (subtotal * parseFloat(discount.value)) / 100;
-            if (discount.type === 'fixed') return acc + parseFloat(discount.value);
-        }
-        return acc;
-    }, 0);
-    return Math.min(totalDiscount, subtotal);
-  };
+
+  const getDiscount = () => calculateDiscount(appliedDiscounts);
+  const getStagedDiscount = () => calculateDiscount(stagedDiscounts);
+
   const getTotal = () => Math.max(0, getSubtotal() - getDiscount());
   const updateQuantity = (index, amount) => {
     setCartItems(prev => {
@@ -217,6 +257,7 @@ const CartPanel = ({
     });
   };
   const removeFromCart = (index) => setCartItems(prev => prev.filter((_, i) => i !== index));
+  
   const handleProcessTransaction = () => {
     if (cartItems.length === 0) {
       alert('Please add items to your cart before processing the transaction.');
@@ -235,7 +276,6 @@ const CartPanel = ({
   };
 
   const handleGCashSubmit = (reference) => {
-    setGCashReference(reference);
     setShowGCashReference(false);
     confirmTransaction(reference);
   };
@@ -261,8 +301,10 @@ const CartPanel = ({
         orderType: orderType,
         paymentMethod: paymentMethod,
         appliedDiscounts: appliedDiscountNames,
-        gcashReference: gcashRef || gcashReference || null
+        gcashReference: gcashRef
     };
+
+    console.log("Submitting the following data to backend:", JSON.stringify(saleData, null, 2));
 
     try {
         const response = await fetch(`${SALES_API_URL}/auth/sales/`, {
@@ -279,12 +321,12 @@ const CartPanel = ({
           throw new Error(responseData.detail || 'Failed to process transaction.');
         }
 
-        setCartItems([]);
-        setAppliedDiscounts([]);
-        setGCashReference('');
         setShowTransactionSummary(false);
         setShowGCashReference(false);
         setShowConfirmation(true);
+        // Clear cart after successful transaction
+        setCartItems([]);
+        setAppliedDiscounts([]);
 
     } catch (err) {
         setError(err.message);
@@ -311,7 +353,7 @@ const CartPanel = ({
                 </div>
                 <div className="cart-items">
                     {cartItems.length > 0 ? (cartItems.map((item, index) => (
-                        <div key={index} className="cart-item">
+                        <div key={`${item.name}-${index}`} className="cart-item">
                             <img src={item.image} alt={item.name} />
                             <div className="item-details">
                                 <div className="item-name">{item.name}</div>
@@ -339,7 +381,7 @@ const CartPanel = ({
                         </div>
                     ))) : (
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '200px', color: '#999', fontSize: '14px' }}>
-                            No products added.
+                            Your cart is empty.
                         </div>
                     )}
                 </div>
@@ -348,15 +390,15 @@ const CartPanel = ({
                         <input 
                             type="text" 
                             placeholder="Discounts and Promotions" 
-                            value={appliedDiscounts.length > 0 ? `${getAppliedDiscountNames().join(', ')}` : ''} 
+                            value={getAppliedDiscountNames().join(', ')} 
                             readOnly 
                         />
                     </div>
                     <div className="summary">
-                        <div className="line"><span>Subtotal:</span><span>₱{getSubtotal().toFixed(0)}</span></div>
-                        <div className="line"><span>Discount:</span><span>₱{getDiscount().toFixed(0)}</span></div>
+                        <div className="line"><span>Subtotal:</span><span>₱{getSubtotal().toFixed(2)}</span></div>
+                        <div className="line"><span>Discount:</span><span>-₱{getDiscount().toFixed(2)}</span></div>
                         <hr />
-                        <div className="line total"><span>Total:</span><span>₱{getTotal().toFixed(0)}</span></div>
+                        <div className="line total"><span>Total:</span><span>₱{getTotal().toFixed(2)}</span></div>
                     </div>
                 </div>
                 <div className="payment-section">
@@ -372,7 +414,9 @@ const CartPanel = ({
                         </button>
                     </div>
                 </div>
-                <button className="process-button" onClick={handleProcessTransaction}>Process Transaction</button>
+                <button className="process-button" onClick={handleProcessTransaction} disabled={isProcessing}>
+                  {isProcessing ? 'Processing...' : 'Process Transaction'}
+                </button>
             </div>
         </div>
 
@@ -397,6 +441,8 @@ const CartPanel = ({
           applyDiscounts={applyDiscounts}
           getStagedDiscount={getStagedDiscount}
           getSubtotal={getSubtotal}
+          // Note: isDiscountApplicable is not passed to the modal
+          // because the enforcement happens in the toggleStagedDiscount handler
         />
 
         <TransactionSummaryModal

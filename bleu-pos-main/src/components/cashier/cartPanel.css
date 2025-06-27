@@ -1023,3 +1023,52 @@
 .gcash-submit-btn:hover {
   background-color: #0056b3;
 }
+/* --- Styles for Disabled Discount Items --- */
+/* This is the key addition for the applicability logic */
+.discount-item.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.discount-item.disabled label,
+.discount-item.disabled input[type="checkbox"] {
+  cursor: not-allowed;
+}
+
+
+.modal-footer {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #eee;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.discount-summary {
+    width: 100%;
+    margin-bottom: 15px;
+}
+.discount-summary span {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 5px;
+}
+.discount-summary .total {
+    font-weight: bold;
+    margin-top: 5px;
+    font-size: 1.1rem;
+}
+
+
+.apply-btn {
+    width: 100%;
+    padding: 15px;
+    background-color: #0056b3;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: bold;
+    cursor: pointer;
+}
