@@ -68,7 +68,7 @@ function Menu() {
         setIsLoading(false);
         return;
       }
-
+      
       try {
         const headers = { 'Authorization': `Bearer ${token}` };
         const [detailsResponse, productsResponse] = await Promise.all([
