@@ -21,7 +21,9 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+// FIX: Changed import style for jspdf-autotable to ensure it correctly
+// attaches itself to the jsPDF instance as a plugin.
+import 'jspdf-autotable';
 
 function CashierSales({ employeeName = "Lim Alcovendas", shiftLabel = "Morning Shift", shiftTime = "6:00AM – 2:00PM", date }) {
   const [activeTab, setActiveTab] = useState('summary');
@@ -340,8 +342,9 @@ function CashierSales({ employeeName = "Lim Alcovendas", shiftLabel = "Morning S
     doc.setFont('Helvetica', 'bold');
     doc.text('Sales Summary', 14, 50);
     doc.setFont('Helvetica', 'normal');
-
-    autoTable(doc, {
+    
+    // FIX: Changed to use doc.autoTable, the plugin method.
+    doc.autoTable({
       startY: 54,
       head: [['Metric', 'Amount']],
       body: [
@@ -372,7 +375,8 @@ function CashierSales({ employeeName = "Lim Alcovendas", shiftLabel = "Morning S
     doc.text('Cash Summary', 14, doc.lastAutoTable.finalY + 10);
     doc.setFont('Helvetica', 'normal');
 
-    autoTable(doc, {
+    // FIX: Changed to use doc.autoTable, the plugin method.
+    doc.autoTable({
       startY: doc.lastAutoTable.finalY + 14,
       head: [['Initial Cash', 'Cash Sales', 'Expected Cash', 'Actual Cash', 'Discrepancy']],
       body: [[
@@ -611,7 +615,7 @@ function CashierSales({ employeeName = "Lim Alcovendas", shiftLabel = "Morning S
                         {hasChange && (
                           <div className={`cashier-sales-percent ${isImproved ? 'green' : 'red'}`}>
                             <FontAwesomeIcon icon={isImproved ? faArrowTrendUp : faArrowTrendDown} />
-                            &nbsp;{Math.abs(percent).toFixed(1)}% from yesterday
+                             {Math.abs(percent).toFixed(1)}% from yesterday
                           </div>
                         )}
                       </div>
