@@ -1,9 +1,9 @@
-# sales_router.py
+# SalesServices/routers/pos_router.py
 
 from fastapi import APIRouter, HTTPException, status, Depends
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Optional
 from decimal import Decimal
 import json
 import sys
@@ -23,7 +23,6 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="http://127.0.0.1:4000/auth/token"
 USER_SERVICE_ME_URL = "http://localhost:4000/auth/users/me"
 
 # --- URLs for Inventory Deduction Endpoints ---
-# NOTE: Use the correct URLs for your services. The inventory service might be on one port.
 INGREDIENTS_DEDUCT_URL = "http://127.0.0.1:8002/ingredients/ingredients/deduct-from-sale"
 MATERIALS_DEDUCT_URL = "http://127.0.0.1:8003/materials/materials/deduct-from-sale"
 
@@ -47,8 +46,10 @@ class Sale(BaseModel):
     orderType: str
     paymentMethod: str
     appliedDiscounts: List[str]
+    gcashReference: Optional[str] = None  # Add this field to accept the reference number
 
 # --- Authorization Helper Function ---
+# ... (this function is unchanged)
 async def get_current_active_user(token: str = Depends(oauth2_scheme)):
     async with httpx.AsyncClient() as client:
         try:
@@ -67,10 +68,10 @@ async def get_current_active_user(token: str = Depends(oauth2_scheme)):
             )
     return response.json()
 
-# --- Helper functions to call Inventory Services ---
 
+# --- Helper functions to call Inventory Services ---
+# ... (these functions are unchanged)
 async def trigger_ingredients_deduction(cart_items: List[SaleItem], token: str):
-    """Calls the Inventory Service to deduct INGREDIENTS for the sold items."""
     logger.info("Triggering INGREDIENT deduction.")
     payload = {"cartItems": [{"name": item.name, "quantity": item.quantity} for item in cart_items]}
     headers = {"Authorization": f"Bearer {token}"}
@@ -83,7 +84,6 @@ async def trigger_ingredients_deduction(cart_items: List[SaleItem], token: str):
         logger.critical(f"INGREDIENT-SYNC-FAILURE: Sale processed, but failed to deduct ingredients. Error: {e}")
 
 async def trigger_materials_deduction(cart_items: List[SaleItem], token: str):
-    """Calls the Inventory Service to deduct MATERIALS for the sold items."""
     logger.info("Triggering MATERIAL deduction.")
     payload = {"cartItems": [{"name": item.name, "quantity": item.quantity} for item in cart_items]}
     headers = {"Authorization": f"Bearer {token}"}
@@ -95,8 +95,9 @@ async def trigger_materials_deduction(cart_items: List[SaleItem], token: str):
     except Exception as e:
         logger.critical(f"MATERIAL-SYNC-FAILURE: Sale processed, but failed to deduct materials. Error: {e}")
 
-# --- Helper function for calculations ---
 
+# --- Helper function for calculations ---
+# --- FIX: This entire function is updated to use the correct database schema ---
 async def calculate_totals_and_discounts(sale_data: Sale, cursor):
     subtotal = Decimal('0.0')
     for item in sale_data.cartItems:
@@ -114,24 +115,29 @@ async def calculate_totals_and_discounts(sale_data: Sale, cursor):
         return subtotal, total_discount_amount, applied_discounts_details
 
     placeholders = ','.join(['?' for _ in sale_data.appliedDiscounts])
+    # Use the CORRECT column names from your database: name, discount_type, etc.
     sql_fetch_discounts = f"""
-        SELECT DiscountID, DiscountName, DiscountType, PercentageValue, FixedValue, MinimumSpend
-        FROM Discounts
-        WHERE DiscountName IN ({placeholders}) AND Status = 'Active' AND GETUTCDATE() BETWEEN ValidFrom AND ValidTo
+        SELECT id, name, discount_type, discount_value, minimum_spend
+        FROM discounts
+        WHERE name IN ({placeholders}) AND status = 'active'
     """
     await cursor.execute(sql_fetch_discounts, sale_data.appliedDiscounts)
     valid_discounts = await cursor.fetchall()
 
     for discount in valid_discounts:
-        min_spend = discount.MinimumSpend or Decimal('0.0')
+        # Use the correct snake_case column names
+        min_spend = discount.minimum_spend or Decimal('0.0')
         if subtotal >= min_spend:
             discount_value = Decimal('0.0')
-            if discount.DiscountType == 'Percentage' and discount.PercentageValue is not None:
-                discount_value = (subtotal * discount.PercentageValue) / Decimal('100')
-            elif discount.DiscountType == 'Fixed' and discount.FixedValue is not None:
-                discount_value = discount.FixedValue
+            # Check discount_type and use the single discount_value column
+            if discount.discount_type == 'percentage' and discount.discount_value is not None:
+                discount_value = (subtotal * Decimal(str(discount.discount_value))) / Decimal('100')
+            elif discount.discount_type == 'fixed_amount' and discount.discount_value is not None:
+                discount_value = Decimal(str(discount.discount_value))
+            
             total_discount_amount += discount_value
-            applied_discounts_details.append({"id": discount.DiscountID, "amount": discount_value})
+            # Use the correct `id` column for the foreign key
+            applied_discounts_details.append({"id": discount.id, "amount": discount_value})
 
     final_discount = min(total_discount_amount, subtotal)
     return subtotal, final_discount, applied_discounts_details
@@ -160,8 +166,21 @@ async def create_sale(
             subtotal, total_discount, discount_details = await calculate_totals_and_discounts(sale, cursor)
             cashier_name = current_user.get("username", "SystemUser")
 
-            sql_sale = "INSERT INTO Sales (OrderType, PaymentMethod, CashierName, TotalDiscountAmount) OUTPUT INSERTED.SaleID VALUES (?, ?, ?, ?)"
-            await cursor.execute(sql_sale, sale.orderType, sale.paymentMethod, cashier_name, total_discount)
+            # Updated SQL to include GCashReferenceNumber column
+            sql_sale = """
+                INSERT INTO Sales (OrderType, PaymentMethod, CashierName, TotalDiscountAmount, GCashReferenceNumber) 
+                OUTPUT INSERTED.SaleID 
+                VALUES (?, ?, ?, ?, ?)
+            """
+            # Updated execute call to pass the gcashReference
+            await cursor.execute(
+                sql_sale, 
+                sale.orderType, 
+                sale.paymentMethod, 
+                cashier_name, 
+                total_discount, 
+                sale.gcashReference  # Pass the reference number here
+            )
             sale_id_row = await cursor.fetchone()
             if not sale_id_row or not sale_id_row[0]:
                 raise HTTPException(status_code=500, detail="Failed to create sale record.")
@@ -173,6 +192,8 @@ async def create_sale(
                 await cursor.execute(sql_item, sale_id, item.name, item.quantity, Decimal(str(item.price)), item.category, addons_str)
 
             for discount in discount_details:
+                # --- FIX: Use the correct column name 'DiscountID' as per your schema if that's its name
+                # Assuming the `SaleDiscounts` table has `DiscountID`. If it's `discount_id`, change it here.
                 sql_sale_discount = "INSERT INTO SaleDiscounts (SaleID, DiscountID, DiscountAppliedAmount) VALUES (?, ?, ?)"
                 await cursor.execute(sql_sale_discount, sale_id, discount['id'], discount['amount'])
 
@@ -180,7 +201,6 @@ async def create_sale(
             await conn.commit()
             
             # After committing the sale, trigger inventory deductions.
-            # This is a "fire-and-forget" approach. We log failures but don't roll back the sale.
             await trigger_ingredients_deduction(cart_items=sale.cartItems, token=token)
             await trigger_materials_deduction(cart_items=sale.cartItems, token=token)
             
@@ -193,6 +213,7 @@ async def create_sale(
             }
     except Exception as e:
         if conn: await conn.rollback()
+        # Log the full traceback for better debugging
         logger.error(f"Error processing sale: {e}", exc_info=True)
         if not isinstance(e, HTTPException):
              raise HTTPException(status_code=500, detail=f"An unexpected error occurred while processing the sale.")

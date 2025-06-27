@@ -1,483 +1,291 @@
+# routers/discount.py
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from pydantic import BaseModel, Field, field_validator, model_validator
-from typing import List, Optional
-import httpx
+from pydantic import BaseModel, Field
+from typing import List, Optional, Literal
 from decimal import Decimal
-from datetime import datetime
+from datetime import date
+import httpx 
 
 # --- Database Connection Import ---
-import sys
-import os
+import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-try:
-    from database import get_db_connection
-except ImportError:
-    print("ERROR: Could not import get_db_connection from database.py.")
-    async def get_db_connection():
-        raise NotImplementedError("Database connection not configured.")
+from database import get_db_connection
 
-# --- Router and Auth ---
-router_discounts = APIRouter(prefix="/discounts", tags=["discounts"])
-router_promotions = APIRouter(prefix="/promotions", tags=["promotions"])
-oauth2_scheme_port4000 = OAuth2PasswordBearer(tokenUrl="http://localhost:4000/auth/token")
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
+EXTERNAL_PRODUCTS_API_URL = "http://127.0.0.1:8001/is_products/products/details/" 
+AUTH_SERVICE_ME_URL = "http://localhost:4000/auth/users/me"
 
-async def validate_token_and_roles_port4000(token: str, allowed_roles: List[str]):
-    auth_url = "http://localhost:4000/auth/users/me"
+# =============================================================================
+# ROUTER SETUP & OAUTH2 SCHEME
+# =============================================================================
+router = APIRouter() 
+discounts_router = APIRouter(prefix="/discounts", tags=["Discounts"])
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="http://localhost:4000/auth/token")
+
+# =============================================================================
+# AUTHORIZATION HELPER
+# =============================================================================
+async def validate_token_and_roles(token: str, allowed_roles: List[str]):
+    headers = {"Authorization": f"Bearer {token}"}
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.get(auth_url, headers={"Authorization": f"Bearer {token}"})
+            response = await client.get(AUTH_SERVICE_ME_URL, headers=headers)
             response.raise_for_status()
-        except httpx.RequestError as exc:
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Auth service is unavailable: {exc}")
-        except httpx.HTTPStatusError as exc:
-            raise HTTPException(status_code=exc.response.status_code, detail="Invalid or expired token.")
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=e.response.status_code, detail=f"Authentication service error: {e.response.text}")
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Authentication service is unavailable: {e}")
 
     user_data = response.json()
-    if user_data.get("userRole") not in allowed_roles:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied for this role.")
+    user_role = user_data.get("userRole")
+
+    if user_role not in allowed_roles:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Access denied. Role '{user_role}' is not authorized.")
+    
     return user_data
 
-async def get_admin_or_manager(token: str = Depends(oauth2_scheme_port4000)) -> dict:
-    return await validate_token_and_roles_port4000(token=token, allowed_roles=["admin", "manager"])
-
-async def get_any_user(token: str = Depends(oauth2_scheme_port4000)) -> dict:
-    return await validate_token_and_roles_port4000(token=token, allowed_roles=["admin", "manager", "cashier"])
-
-# --- Pydantic Models (Unchanged) ---
+# =============================================================================
+# PYDANTIC MODELS
+# =============================================================================
 class DiscountBase(BaseModel):
-    DiscountName: str
-    Description: Optional[str] = None
-    ProductName: Optional[str] = None
-    DiscountType: str
-    PercentageValue: Optional[Decimal] = Field(None, gt=0, lt=100)
-    FixedValue: Optional[Decimal] = Field(None, ge=0)
-    MinimumSpend: Optional[Decimal] = Field(None, ge=0)
-    ValidFrom: datetime
-    ValidTo: datetime
-    Status: str
-    
-    @field_validator('DiscountType')
-    def discount_type_must_be_valid(cls, v: str) -> str:
-        if v not in ['Percentage', 'Fixed']:
-            raise ValueError("DiscountType must be either 'Percentage' or 'Fixed'")
-        return v
-        
-    @model_validator(mode='after')
-    def check_dates_and_conditional_values(self) -> 'DiscountBase':
-        if self.ValidFrom and self.ValidTo and self.ValidTo <= self.ValidFrom:
-            raise ValueError('ValidTo date must be after ValidFrom date')
+    discountName: str = Field(..., max_length=255)
+    applicationType: Literal['all_products', 'specific_categories', 'specific_products']
+    selectedCategories: Optional[List[str]] = []
+    selectedProducts: Optional[List[str]] = []
+    discountType: Literal['percentage', 'fixed_amount']
+    discountValue: Decimal = Field(..., gt=0)
+    minSpend: Optional[Decimal] = Field(0, ge=0)
+    validFrom: date
+    validTo: date
+    status: Literal['active', 'inactive', 'expired']
 
-        if self.DiscountType == 'Percentage' and self.PercentageValue is None:
-            raise ValueError('PercentageValue is required for Percentage type discounts')
-        
-        if self.DiscountType == 'Fixed' and self.FixedValue is None:
-            raise ValueError('FixedValue is required for Fixed type discounts')
-        
-        return self
+class DiscountCreate(DiscountBase): pass
+class DiscountUpdate(DiscountBase): pass
 
-class DiscountCreate(DiscountBase):
-    pass
+# --- MODIFIED: Added fields to send applicability rules to the frontend ---
+class DiscountListOut(BaseModel):
+    id: int
+    name: str
+    application: str
+    discount: str
+    minSpend: float
+    validFrom: str
+    validTo: str
+    status: str
+    type: str
+    # --- NEW FIELDS FOR FRONTEND LOGIC ---
+    application_type: str
+    applicable_products: List[str]
+    applicable_categories: List[str]
 
-class DiscountUpdate(DiscountBase):
-    pass
+class DiscountDetailOut(DiscountBase):
+    id: int
 
-class DiscountOut(BaseModel):
-    DiscountID: int
-    DiscountName: str
-    Description: Optional[str]
-    ProductName: Optional[str]
-    DiscountType: str
-    PercentageValue: Optional[Decimal]
-    FixedValue: Optional[Decimal]
-    MinimumSpend: Optional[Decimal]
-    ValidFrom: datetime
-    ValidTo: datetime
-    Username: str 
-    Status: str
-    CreatedAt: datetime
-    
-    class Config:
-        from_attributes = True
-
-class PromotionBase(BaseModel):
-    PromotionName: str
-    Description: Optional[str] = None
-    PromotionType: str  # percentage, fixed, bogo
-    PercentageValue: Optional[Decimal] = Field(None, gt=0, lt=100)
-    FixedValue: Optional[Decimal] = Field(None, ge=0)
-    BuyQuantity: Optional[int] = Field(None, ge=1)
-    GetQuantity: Optional[int] = Field(None, ge=1)
-    MinQuantity: Optional[int] = Field(None, ge=1)
-    MaxUsesPerCustomer: Optional[int] = Field(None, ge=1)
-    ValidFrom: datetime
-    ValidTo: datetime
-    Status: str
-    SelectedProductIDs: List[int]
-
-    @field_validator('PromotionType')
-    def promo_type_valid(cls, v):
-        if v not in ['percentage', 'fixed', 'bogo']:
-            raise ValueError("Invalid PromotionType")
-        return v
-
-    @model_validator(mode='after')
-    def validate_values(self):
-        if self.ValidTo <= self.ValidFrom:
-            raise ValueError('ValidTo must be after ValidFrom')
-        if self.PromotionType == 'percentage' and self.PercentageValue is None:
-            raise ValueError('PercentageValue is required for percentage type')
-        if self.PromotionType == 'fixed' and self.FixedValue is None:
-            raise ValueError('FixedValue is required for fixed type')
-        if self.PromotionType == 'bogo':
-            if self.BuyQuantity is None or self.GetQuantity is None:
-                raise ValueError('BuyQuantity and GetQuantity are required for BOGO')
-        if not self.SelectedProductIDs:
-            raise ValueError('At least one product must be selected')
-        return self
-
-class PromotionCreate(PromotionBase):
-    pass
-
-class PromotionUpdate(PromotionBase):
-    pass
-
-class PromotionOut(PromotionBase):
-    PromotionID: int
-    Username: str
-    CreatedAt: datetime
-
-    class Config:
-        from_attributes = True
-
-
-# --- CRUD Endpoints ---
-
-@router_discounts.post("/", response_model=DiscountOut, status_code=status.HTTP_201_CREATED)
-async def create_discount(discount_data: DiscountCreate, current_user: dict = Depends(get_admin_or_manager)):
-    username = current_user.get("username", "unknown_user") 
-    conn = None
+# =============================================================================
+# HELPER FUNCTION FOR EXTERNAL DATA (Unchanged)
+# =============================================================================
+async def get_external_choices(token: str):
+    headers = {"Authorization": f"Bearer {token}"}
     try:
-        conn = await get_db_connection()
-        # FIX: Removed `as_dict=True` which is not supported by pyodbc
-        async with conn.cursor() as cursor:
-            await cursor.execute("SELECT 1 FROM Discounts WHERE DiscountName = ?", discount_data.DiscountName)
-            if await cursor.fetchone():
-                raise HTTPException(status_code=400, detail=f"Discount name '{discount_data.DiscountName}' already exists.")
+        async with httpx.AsyncClient() as client:
+            response = await client.get(EXTERNAL_PRODUCTS_API_URL, headers=headers, timeout=10.0)
+            response.raise_for_status()
+            data = response.json()
+            valid_products = {item['ProductName'] for item in data if 'ProductName' in item and item['ProductName']}
+            valid_categories = {item['ProductCategory'] for item in data if 'ProductCategory' in item and item['ProductCategory']}
+            return valid_products, valid_categories
+    except httpx.RequestError as e:
+        detail = f"Network error communicating with Products service: {e}"
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail)
+    except httpx.HTTPStatusError as e:
+        detail = f"Products service returned an error: Status {e.response.status_code} - Response: {e.response.text}"
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
 
-            sql = """
-                INSERT INTO Discounts (
-                    DiscountName, Description, ProductName, DiscountType, PercentageValue, FixedValue,
-                    MinimumSpend, ValidFrom, ValidTo, Username, Status
-                )
-                OUTPUT INSERTED.*
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+# =============================================================================
+# DISCOUNT ENDPOINTS
+# =============================================================================
+
+@discounts_router.post("/", response_model=DiscountDetailOut, status_code=status.HTTP_201_CREATED)
+async def create_discount(discount_data: DiscountCreate, token: str = Depends(oauth2_scheme)):
+    await validate_token_and_roles(token, allowed_roles=["admin", "manager"])
+    conn = await get_db_connection()
+    try:
+        conn.autocommit = False
+        async with conn.cursor() as cursor:
+            sql_insert = """
+                INSERT INTO discounts (name, status, application_type, discount_type, discount_value, minimum_spend, valid_from, valid_to)
+                OUTPUT INSERTED.id VALUES (?, ?, ?, ?, ?, ?, ?, ?);
             """
-            await cursor.execute(
-                sql,
-                discount_data.DiscountName, discount_data.Description, discount_data.ProductName,
-                discount_data.DiscountType, discount_data.PercentageValue, discount_data.FixedValue,
-                discount_data.MinimumSpend, discount_data.ValidFrom, discount_data.ValidTo,
-                username, discount_data.Status
-            )
-            # FIX: Manually convert the single-row result to a dictionary
-            columns = [column[0] for column in cursor.description]
-            row = await cursor.fetchone()
-            await conn.commit()
+            await cursor.execute(sql_insert, discount_data.discountName, discount_data.status, discount_data.applicationType,
+                                 discount_data.discountType, discount_data.discountValue, discount_data.minSpend,
+                                 discount_data.validFrom.isoformat(), discount_data.validTo.isoformat())
+            new_id = (await cursor.fetchone())[0]
+
+            if discount_data.applicationType == 'specific_products':
+                for name in discount_data.selectedProducts: await cursor.execute("INSERT INTO discount_applicable_products (discount_id, product_name) VALUES (?, ?)", new_id, name)
+            elif discount_data.applicationType == 'specific_categories':
+                for name in discount_data.selectedCategories: await cursor.execute("INSERT INTO discount_applicable_categories (discount_id, category_name) VALUES (?, ?)", new_id, name)
             
-            if not row:
-                raise HTTPException(status_code=500, detail="Failed to create discount, no record returned.")
+            await conn.commit()
+            return DiscountDetailOut(id=new_id, **discount_data.model_dump())
+    except Exception as e:
+        await conn.rollback()
+        if "UNIQUE" in str(e).upper(): raise HTTPException(status_code=409, detail=f"A discount with the name '{discount_data.discountName}' already exists.")
+        raise HTTPException(status_code=500, detail=f"Database error on create: {e}")
+    finally:
+        conn.autocommit = True
+        if conn: await conn.close()
+
+# --- MODIFIED: This is the key function that was updated ---
+@discounts_router.get("/", response_model=List[DiscountListOut])
+async def get_all_discounts(token: str = Depends(oauth2_scheme)):
+    await validate_token_and_roles(token, allowed_roles=["admin", "manager", "staff", "cashier"])
+    conn = await get_db_connection()
+    try:
+        async with conn.cursor() as cursor:
+            await cursor.execute("SELECT id, name, status, application_type, discount_type, discount_value, minimum_spend, valid_from, valid_to FROM discounts ORDER BY id DESC")
+            discounts_raw = await cursor.fetchall()
+            discounts_map = {row.id: {"data": dict(zip([c[0] for c in cursor.description], row)), "products": [], "categories": []} for row in discounts_raw}
+            
+            await cursor.execute("SELECT discount_id, product_name FROM discount_applicable_products")
+            for row in await cursor.fetchall():
+                if row.discount_id in discounts_map: discounts_map[row.discount_id]["products"].append(row.product_name)
+            
+            await cursor.execute("SELECT discount_id, category_name FROM discount_applicable_categories")
+            for row in await cursor.fetchall():
+                if row.discount_id in discounts_map: discounts_map[row.discount_id]["categories"].append(row.category_name)
+            
+            results = []
+            for _, item_data in discounts_map.items():
+                d, prods, cats = item_data['data'], item_data['products'], item_data['categories']
+                app_str = "All Products"
+                if d['application_type'] == 'specific_products': app_str = f"{len(prods)} Product(s)"
+                elif d['application_type'] == 'specific_categories': app_str = f"{len(cats)} Category(s)"
+                disc_str = f"₱{d['discount_value']:.2f}"
+                if d['discount_type'] == 'percentage': disc_str = f"{d['discount_value']:.1f}%"
                 
-            return dict(zip(columns, row))
-            
-    except ValueError as ve: 
-        raise HTTPException(status_code=422, detail=str(ve))
+                # --- MODIFIED: Populate the new fields in the response model ---
+                results.append(DiscountListOut(
+                    id=d['id'], 
+                    name=d['name'], 
+                    application=app_str, 
+                    discount=disc_str, 
+                    minSpend=float(d['minimum_spend']), 
+                    validFrom=d['valid_from'].strftime('%Y-%m-%d'), 
+                    validTo=d['valid_to'].strftime('%Y-%m-%d'), 
+                    status=d['status'], 
+                    type=d['discount_type'],
+                    # --- ADDED THESE LINES ---
+                    application_type=d['application_type'],
+                    applicable_products=prods,
+                    applicable_categories=cats
+                ))
+            return results
     except Exception as e:
-        if conn: await conn.rollback()
-        raise HTTPException(status_code=500, detail=f"Database error creating discount: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error on get all: {e}")
     finally:
         if conn: await conn.close()
 
-@router_discounts.get("/", response_model=List[DiscountOut])
-async def get_all_discounts(active_only: bool = False, current_user: dict = Depends(get_any_user)):
-    conn = None
+@discounts_router.get("/{discount_id}", response_model=DiscountDetailOut)
+async def get_discount(discount_id: int, token: str = Depends(oauth2_scheme)):
+    await validate_token_and_roles(token, allowed_roles=["admin", "manager", "staff", "cashier"])
+    conn = await get_db_connection()
     try:
-        conn = await get_db_connection()
-        # FIX: Removed `as_dict=True` which is not supported by pyodbc
         async with conn.cursor() as cursor:
-            sql = "SELECT * FROM Discounts"
-            if active_only:
-                sql += " WHERE Status = 'Active' AND GETUTCDATE() BETWEEN ValidFrom AND ValidTo"
-            sql += " ORDER BY DiscountID DESC"
+            await cursor.execute("SELECT * FROM discounts WHERE id=?", discount_id)
+            d = await cursor.fetchone()
+            if not d: raise HTTPException(status_code=404, detail="Discount not found")
             
-            await cursor.execute(sql)
-            
-            # FIX: Manually convert tuple results into a list of dictionaries
-            columns = [column[0] for column in cursor.description]
-            rows = await cursor.fetchall()
-            
-            return [dict(zip(columns, row)) for row in rows]
+            base_data = dict(zip([c[0] for c in cursor.description], d))
+            await cursor.execute("SELECT product_name FROM discount_applicable_products WHERE discount_id=?", discount_id)
+            products = [row.product_name for row in await cursor.fetchall()]
+            await cursor.execute("SELECT category_name FROM discount_applicable_categories WHERE discount_id=?", discount_id)
+            categories = [row.category_name for row in await cursor.fetchall()]
 
+            return DiscountDetailOut(
+                id=base_data['id'], discountName=base_data['name'], applicationType=base_data['application_type'],
+                selectedProducts=products, selectedCategories=categories, discountType=base_data['discount_type'],
+                discountValue=base_data['discount_value'], minSpend=base_data['minimum_spend'],
+                validFrom=base_data['valid_from'], validTo=base_data['valid_to'], status=base_data['status'])
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching discounts: {e}")
-    finally:
-        if conn: await conn.close()
-        
-@router_discounts.get("/{discount_id}", response_model=DiscountOut)
-async def get_discount_by_id(discount_id: int, current_user: dict = Depends(get_any_user)):
-    conn = None
-    try:
-        conn = await get_db_connection()
-        # FIX: Removed `as_dict=True` which is not supported by pyodbc
-        async with conn.cursor() as cursor:
-            await cursor.execute("SELECT * FROM Discounts WHERE DiscountID = ?", discount_id)
-            
-            # FIX: Manually convert the single-row result to a dictionary
-            columns = [column[0] for column in cursor.description]
-            row = await cursor.fetchone()
-            
-            if not row:
-                raise HTTPException(status_code=404, detail=f"Discount ID {discount_id} not found.")
-                
-            return dict(zip(columns, row))
-            
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching discount: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error on get one: {e}")
     finally:
         if conn: await conn.close()
 
-@router_discounts.put("/{discount_id}", response_model=DiscountOut)
-async def update_discount(discount_id: int, discount_data: DiscountUpdate, current_user: dict = Depends(get_admin_or_manager)):
-    conn = None
-    username = current_user.get("username", "unknown_user")
+@discounts_router.put("/{discount_id}", response_model=DiscountDetailOut)
+async def update_discount(discount_id: int, discount_data: DiscountUpdate, token: str = Depends(oauth2_scheme)):
+    await validate_token_and_roles(token, allowed_roles=["admin", "manager"])
+    conn = await get_db_connection()
     try:
-        conn = await get_db_connection()
-        # FIX: Removed `as_dict=True`
+        conn.autocommit = False
         async with conn.cursor() as cursor:
-            await cursor.execute("SELECT 1 FROM Discounts WHERE DiscountID = ?", discount_id)
-            if not await cursor.fetchone():
-                raise HTTPException(status_code=404, detail=f"Discount ID {discount_id} not found.")
-
-            sql = """
-                UPDATE Discounts SET
-                    DiscountName = ?, Description = ?, ProductName = ?, DiscountType = ?,
-                    PercentageValue = ?, FixedValue = ?, MinimumSpend = ?, ValidFrom = ?,
-                    ValidTo = ?, Username = ?, Status = ?
-                WHERE DiscountID = ?
+            sql_update = """
+                UPDATE discounts SET name=?, status=?, application_type=?, discount_type=?, discount_value=?, minimum_spend=?, valid_from=?, valid_to=?, updated_at=GETDATE()
+                WHERE id=?
             """
-            await cursor.execute(
-                sql,
-                discount_data.DiscountName, discount_data.Description, discount_data.ProductName,
-                discount_data.DiscountType, discount_data.PercentageValue, discount_data.FixedValue,
-                discount_data.MinimumSpend, discount_data.ValidFrom, discount_data.ValidTo,
-                username, discount_data.Status, discount_id
-            )
+            await cursor.execute(sql_update, discount_data.discountName, discount_data.status, discount_data.applicationType,
+                                 discount_data.discountType, discount_data.discountValue, discount_data.minSpend,
+                                 discount_data.validFrom.isoformat(), discount_data.validTo.isoformat(), discount_id)
+            if cursor.rowcount == 0: raise HTTPException(status_code=404, detail="Discount not found")
+
+            await cursor.execute("DELETE FROM discount_applicable_products WHERE discount_id=?", discount_id)
+            await cursor.execute("DELETE FROM discount_applicable_categories WHERE discount_id=?", discount_id)
+
+            if discount_data.applicationType == 'specific_products':
+                for name in discount_data.selectedProducts: await cursor.execute("INSERT INTO discount_applicable_products (discount_id, product_name) VALUES (?, ?)", discount_id, name)
+            elif discount_data.applicationType == 'specific_categories':
+                for name in discount_data.selectedCategories: await cursor.execute("INSERT INTO discount_applicable_categories (discount_id, category_name) VALUES (?, ?)", discount_id, name)
+
             await conn.commit()
-            
-            # This function is now fixed, so calling it will work correctly.
-            return await get_discount_by_id(discount_id, current_user)
-            
-    except ValueError as ve:
-        raise HTTPException(status_code=422, detail=str(ve))
+            return DiscountDetailOut(id=discount_id, **discount_data.model_dump())
     except Exception as e:
-        if conn: await conn.rollback()
-        raise HTTPException(status_code=500, detail=f"Error updating discount: {e}")
+        await conn.rollback()
+        if "UNIQUE" in str(e).upper(): raise HTTPException(status_code=409, detail=f"A discount with the name '{discount_data.discountName}' already exists.")
+        raise HTTPException(status_code=500, detail=f"Database error on update: {e}")
     finally:
+        conn.autocommit = True
         if conn: await conn.close()
 
-@router_discounts.delete("/{discount_id}", status_code=status.HTTP_200_OK)
-async def delete_discount(discount_id: int, current_user: dict = Depends(get_admin_or_manager)):
-    conn = None
+@discounts_router.delete("/{discount_id}", status_code=status.HTTP_200_OK)
+async def delete_discount(discount_id: int, token: str = Depends(oauth2_scheme)):
+    await validate_token_and_roles(token, allowed_roles=["admin", "manager"])
+    conn = await get_db_connection()
     try:
-        conn = await get_db_connection()
+        conn.autocommit = False
         async with conn.cursor() as cursor:
-            await cursor.execute("SELECT 1 FROM Discounts WHERE DiscountID = ?", discount_id)
-            if not await cursor.fetchone():
-                raise HTTPException(status_code=404, detail=f"Discount ID {discount_id} not found.")
-            
-            await cursor.execute("DELETE FROM Discounts WHERE DiscountID = ?", discount_id)
+            await cursor.execute("DELETE FROM discount_applicable_products WHERE discount_id=?", discount_id)
+            await cursor.execute("DELETE FROM discount_applicable_categories WHERE discount_id=?", discount_id)
+            await cursor.execute("DELETE FROM discounts WHERE id=?", discount_id)
+            if cursor.rowcount == 0: raise HTTPException(status_code=404, detail="Discount not found")
             await conn.commit()
-            
-            if cursor.rowcount == 0:
-                raise HTTPException(status_code=404, detail=f"Discount ID {discount_id} could not be deleted.")
-            
-            return {"message": f"Discount ID {discount_id} deleted successfully."}
+            return {"message": "Discount deleted successfully."}
     except Exception as e:
-        if conn: await conn.rollback()
-        if "The DELETE statement conflicted with the REFERENCE constraint" in str(e):
-             raise HTTPException(status_code=409, detail=f"Cannot delete discount ID {discount_id} as it is currently applied to one or more sales.")
-        raise HTTPException(status_code=500, detail=f"Error deleting discount: {e}")
+        await conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Database error on delete: {e}")
     finally:
+        conn.autocommit = True
         if conn: await conn.close()
 
-@router_promotions.post("/", response_model=PromotionOut, status_code=201)
-async def create_promotion(promo: PromotionCreate, current_user: dict = Depends(get_admin_or_manager)):
-    conn = None
-    username = current_user.get("username", "unknown_user")
-    try:
-        conn = await get_db_connection()
-        async with conn.cursor() as cursor:
-            await cursor.execute("SELECT 1 FROM Promotions WHERE PromotionName = ?", promo.PromotionName)
-            if await cursor.fetchone():
-                raise HTTPException(status_code=400, detail="Promotion name already exists")
+# =============================================================================
+# EXTERNAL DATA ENDPOINTS
+# =============================================================================
+@router.get("/available-products", response_model=List[dict], tags=["External Data"])
+async def get_available_products_for_frontend(token: str = Depends(oauth2_scheme)):
+    await validate_token_and_roles(token, allowed_roles=["admin", "manager", "staff", "cashier"])
+    valid_products, _ = await get_external_choices(token=token)
+    return [{"ProductName": name} for name in sorted(list(valid_products))]
 
-            sql = """
-                INSERT INTO Promotions (
-                    PromotionName, Description, PromotionType, PercentageValue, FixedValue,
-                    BuyQuantity, GetQuantity, MinQuantity, MaxUsesPerCustomer,
-                    ValidFrom, ValidTo, Status, Username
-                )
-                OUTPUT INSERTED.PromotionID, INSERTED.PromotionName, INSERTED.Description,
-                       INSERTED.PromotionType, INSERTED.PercentageValue, INSERTED.FixedValue,
-                       INSERTED.BuyQuantity, INSERTED.GetQuantity, INSERTED.MinQuantity,
-                       INSERTED.MaxUsesPerCustomer, INSERTED.ValidFrom, INSERTED.ValidTo,
-                       INSERTED.Status, INSERTED.Username, INSERTED.CreatedAt
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """
-            await cursor.execute(sql, promo.PromotionName, promo.Description, promo.PromotionType,
-                                 promo.PercentageValue, promo.FixedValue,
-                                 promo.BuyQuantity, promo.GetQuantity,
-                                 promo.MinQuantity, promo.MaxUsesPerCustomer,
-                                 promo.ValidFrom, promo.ValidTo, promo.Status, username)
-            row = await cursor.fetchone()
-            columns = [col[0] for col in cursor.description]
-            promotion_dict = dict(zip(columns, row))
+@router.get("/available-categories", response_model=List[dict], tags=["External Data"])
+async def get_available_categories_for_frontend(token: str = Depends(oauth2_scheme)):
+    await validate_token_and_roles(token, allowed_roles=["admin", "manager", "staff", "cashier"])
+    _, valid_categories = await get_external_choices(token=token)
+    return [{"name": name} for name in sorted(list(valid_categories))]
 
-            # insert into join table: PromotionProducts
-            for product_id in promo.SelectedProductIDs:
-                await cursor.execute("INSERT INTO PromotionProducts (PromotionID, ProductID) VALUES (?, ?)", promotion_dict['PromotionID'], product_id)
-
-            await conn.commit()
-            promotion_dict['SelectedProductIDs'] = promo.SelectedProductIDs
-            return promotion_dict
-
-    except Exception as e:
-        if conn: await conn.rollback()
-        raise HTTPException(status_code=500, detail=f"Error creating promotion: {e}")
-    finally:
-        if conn: await conn.close()
-    
-    @router_promotions.get("/", response_model=List[PromotionOut])
-    async def get_all_promotions(current_user: dict = Depends(get_any_user)):
-        conn = None
-        try:
-            conn = await get_db_connection()
-            async with conn.cursor() as cursor:
-                await cursor.execute("""
-                    SELECT p.*, 
-                        ISNULL(pp.ProductIDs, '') AS SelectedProductIDs
-                    FROM Promotions p
-                    OUTER APPLY (
-                        SELECT STRING_AGG(CONVERT(VARCHAR, ProductID), ',') AS ProductIDs
-                        FROM PromotionProducts 
-                        WHERE PromotionID = p.PromotionID
-                    ) pp
-                    ORDER BY p.PromotionID DESC
-                """)
-                columns = [col[0] for col in cursor.description]
-                rows = await cursor.fetchall()
-                results = []
-                for row in rows:
-                    item = dict(zip(columns, row))
-                    item['SelectedProductIDs'] = list(map(int, item['SelectedProductIDs'].split(','))) if item['SelectedProductIDs'] else []
-                    results.append(item)
-                return results
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error retrieving promotions: {e}")
-        finally:
-            if conn: await conn.close()
-
-    @router_promotions.get("/{promotion_id}", response_model=PromotionOut)
-    async def get_promotion_by_id(promotion_id: int, current_user: dict = Depends(get_any_user)):
-        conn = None
-        try:
-            conn = await get_db_connection()
-            async with conn.cursor() as cursor:
-                await cursor.execute("""
-                    SELECT p.*, 
-                        ISNULL(pp.ProductIDs, '') AS SelectedProductIDs
-                    FROM Promotions p
-                    OUTER APPLY (
-                        SELECT STRING_AGG(CONVERT(VARCHAR, ProductID), ',') AS ProductIDs
-                        FROM PromotionProducts 
-                        WHERE PromotionID = p.PromotionID
-                    ) pp
-                    WHERE p.PromotionID = ?
-                """, promotion_id)
-                row = await cursor.fetchone()
-                if not row:
-                    raise HTTPException(status_code=404, detail="Promotion not found.")
-                columns = [col[0] for col in cursor.description]
-                item = dict(zip(columns, row))
-                item['SelectedProductIDs'] = list(map(int, item['SelectedProductIDs'].split(','))) if item['SelectedProductIDs'] else []
-                return item
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error retrieving promotion: {e}")
-        finally:
-            if conn: await conn.close()
-
-    @router_promotions.put("/{promotion_id}", response_model=PromotionOut)
-    async def update_promotion(promotion_id: int, promo: PromotionUpdate, current_user: dict = Depends(get_admin_or_manager)):
-        conn = None
-        username = current_user.get("username", "unknown_user")
-        try:
-            conn = await get_db_connection()
-            async with conn.cursor() as cursor:
-                await cursor.execute("SELECT 1 FROM Promotions WHERE PromotionID = ?", promotion_id)
-                if not await cursor.fetchone():
-                    raise HTTPException(status_code=404, detail="Promotion not found.")
-
-                update_sql = """
-                    UPDATE Promotions SET
-                        PromotionName = ?, Description = ?, PromotionType = ?, PercentageValue = ?,
-                        FixedValue = ?, BuyQuantity = ?, GetQuantity = ?, MinQuantity = ?,
-                        MaxUsesPerCustomer = ?, ValidFrom = ?, ValidTo = ?, Status = ?, Username = ?
-                    WHERE PromotionID = ?
-                """
-                await cursor.execute(update_sql,
-                    promo.PromotionName, promo.Description, promo.PromotionType, promo.PercentageValue,
-                    promo.FixedValue, promo.BuyQuantity, promo.GetQuantity, promo.MinQuantity,
-                    promo.MaxUsesPerCustomer, promo.ValidFrom, promo.ValidTo, promo.Status, username,
-                    promotion_id
-                )
-
-                # Clear old mappings and insert new ones
-                await cursor.execute("DELETE FROM PromotionProducts WHERE PromotionID = ?", promotion_id)
-                for product_id in promo.SelectedProductIDs:
-                    await cursor.execute("INSERT INTO PromotionProducts (PromotionID, ProductID) VALUES (?, ?)", promotion_id, product_id)
-
-                await conn.commit()
-                return await get_promotion_by_id(promotion_id, current_user)
-
-        except Exception as e:
-            if conn: await conn.rollback()
-            raise HTTPException(status_code=500, detail=f"Error updating promotion: {e}")
-        finally:
-            if conn: await conn.close()
-
-    @router_promotions.delete("/{promotion_id}", status_code=200)
-    async def delete_promotion(promotion_id: int, current_user: dict = Depends(get_admin_or_manager)):
-        conn = None
-        try:
-            conn = await get_db_connection()
-            async with conn.cursor() as cursor:
-                await cursor.execute("SELECT 1 FROM Promotions WHERE PromotionID = ?", promotion_id)
-                if not await cursor.fetchone():
-                    raise HTTPException(status_code=404, detail="Promotion not found.")
-
-                # Delete associated product mappings first
-                await cursor.execute("DELETE FROM PromotionProducts WHERE PromotionID = ?", promotion_id)
-                await cursor.execute("DELETE FROM Promotions WHERE PromotionID = ?", promotion_id)
-
-                await conn.commit()
-                return {"message": f"Promotion ID {promotion_id} deleted successfully."}
-
-        except Exception as e:
-            if conn: await conn.rollback()
-            if "REFERENCE constraint" in str(e):
-                raise HTTPException(status_code=409, detail=f"Cannot delete promotion ID {promotion_id} as it is currently applied to sales.")
-            raise HTTPException(status_code=500, detail=f"Error deleting promotion: {e}")
-        finally:
-            if conn: await conn.close()
-
-    __all__ = ["router_discounts", "router_promotions"]
+# =============================================================================
+# FINAL ROUTER SETUP
+# =============================================================================
+router.include_router(discounts_router)
