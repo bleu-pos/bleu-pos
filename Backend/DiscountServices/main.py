@@ -17,6 +17,10 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        "https://bleu-ums.vercel.app",
+        "https://bleu-ims.vercel.app",
+        "https://bleu-ums.onrender.com"
+
         "http://localhost:3000",
         "http://localhost:4000",
         "http://localhost:4001",
