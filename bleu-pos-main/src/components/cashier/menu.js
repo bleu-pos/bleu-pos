@@ -3,7 +3,7 @@ import Navbar from '../navbar';
 import CartPanel from './cartPanel.js';
 import './menu.css';
 
-const API_BASE_URL = 'https://product-services-1.onrender.com';
+const API_PRODUCT_URL = 'https://product-services-1.onrender.com';
 
 function Menu() {
   // State for UI and Cart
@@ -72,8 +72,8 @@ function Menu() {
       try {
         const headers = { 'Authorization': `Bearer ${token}` };
         const [detailsResponse, productsResponse] = await Promise.all([
-          fetch(`${API_BASE_URL}/is_products/products/details/`, { headers }),
-          fetch(`${API_BASE_URL}/is_products/products/`, { headers })
+          fetch(`${API_PRODUCT_URL}/is_products/products/details/`, { headers }),
+          fetch(`${API_PRODUCT_URL}/is_products/products/`, { headers })
         ]);
         
         if (detailsResponse.status === 401 || productsResponse.status === 401) {
