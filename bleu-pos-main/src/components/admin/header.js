@@ -2,10 +2,10 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from 'react-router-dom';
 import { FaChevronDown, FaBell } from "react-icons/fa";
 import { jwtDecode } from 'jwt-decode';
-import { confirmAlert } from 'react-confirm-alert'; // ✅ import this
-import 'react-confirm-alert/src/react-confirm-alert.css'; // ✅ import CSS
+import { confirmAlert } from 'react-confirm-alert';         // Correct: Imports the function
+import 'react-confirm-alert/src/react-confirm-alert.css'; // Correct: Imports the necessary CSS
 import "./header.css";
-import './confirmAlertCustom.css';
+import './confirmAlertCustom.css'; // Correct: Imports your custom styles
 
 const Header = ({ pageTitle }) => {
   const [isDropdownOpen, setDropdownOpen] = useState(false);
@@ -16,7 +16,7 @@ const Header = ({ pageTitle }) => {
 
   const toggleDropdown = () => setDropdownOpen(!isDropdownOpen);
 
-  // ✅ show confirmation before logout
+  // This function correctly sets up the confirmation dialog
   const confirmLogout = () => {
     confirmAlert({
       title: 'Confirm Logout',
@@ -110,7 +110,8 @@ const Header = ({ pageTitle }) => {
           {isDropdownOpen && (
             <div className="profile-dropdown">
               <ul>
-                <li onClick={confirmLogout}>Logout</li> {/* ✅ Changed */}
+                {/* This correctly calls your confirmation function */}
+                <li onClick={confirmLogout}>Logout</li>
               </ul>
             </div>
           )}

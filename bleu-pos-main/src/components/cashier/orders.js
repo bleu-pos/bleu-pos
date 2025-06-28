@@ -50,7 +50,7 @@ function Orders() {
       const headers = { 'Authorization': `Bearer ${token}` };
 
       const [storeResponse, onlineResponse] = await Promise.allSettled([
-        fetch(`${SALES_API_BASE_URL}/auth/purchase_orders/status/processing`, { headers }),
+        fetch(`${SALES_API_BASE_URL}/purchase_orders/status/processing`, { headers }),
         fetch(`${ONLINE_API_BASE_URL}/cart/admin/orders/manage`, { headers })
       ]);
 
