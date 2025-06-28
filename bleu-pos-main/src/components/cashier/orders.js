@@ -5,7 +5,6 @@ import DataTable from "react-data-table-component";
 import OrderPanel from "./orderPanel";
 
 // --- For easy configuration, define the base URLs for your services ---
-
 const ONLINE_API_BASE_URL = 'https://ordering-service.onrender.com'; // Your new Online/Cart Service
 
 function Orders() {
@@ -38,7 +37,7 @@ function Orders() {
   
   const getTodayLocalDate = useCallback(() => getLocalDateString(new Date()), [getLocalDateString]);
 
-  const fetchOrders = useCallback(async () => {
+  const fetchOrders = useCallback(async (). => {
     if (storeOrders.length === 0 && onlineOrders.length === 0) {
       setLoading(true);
     }
@@ -50,7 +49,8 @@ function Orders() {
       const headers = { 'Authorization': `Bearer ${token}` };
 
       const [storeResponse, onlineResponse] = await Promise.allSettled([
-        fetch(`https://sales-service-bm35.onrender.com/auth/purchase_orders/status/processing`, { headers }),
+        // FIXED: Changed the URL to use a query parameter (?status=) instead of a path parameter (/status/).
+        fetch(`https://sales-service-bm35.onrender.com/auth/purchase_orders?status=processing`, { headers }),
         fetch(`${ONLINE_API_BASE_URL}/cart/admin/orders/manage`, { headers })
       ]);
 
@@ -173,7 +173,6 @@ function Orders() {
     { name: "STATUS", selector: (row) => row.status, cell: (row) => (<span className={`orderpanel-status-badge orderpanel-${row.status.toLowerCase().replace(/\s+/g, '')}`}>{row.status}</span>), width: "15%" },
   ];
 
-  // --- SIMPLIFIED: This function now performs a single API call to update status ---
   const handleUpdateStatus = async (orderToUpdate, newStatus) => {
     const token = localStorage.getItem('authToken');
     if (!token) {
@@ -184,9 +183,9 @@ function Orders() {
     const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
     let url, body;
 
-    // Determine the correct API endpoint and payload based on the order source
+    // Notice you removed the SALES_API_BASE_URL constant, so I've hardcoded the URL here to match your code.
     if (orderToUpdate.source === 'store') {
-        url = `${SALES_API_BASE_URL}/auth/purchase_orders/${orderToUpdate.id}/status`;
+        url = `https://sales-service-bm35.onrender.com/auth/purchase_orders/${orderToUpdate.id}/status`;
         body = JSON.stringify({ newStatus: newStatus.toLowerCase() });
     } else if (orderToUpdate.source === 'online') {
         url = `${ONLINE_API_BASE_URL}/cart/admin/orders/${orderToUpdate.id}/status`;
@@ -196,7 +195,6 @@ function Orders() {
         return;
     }
 
-    // Perform the status update API call
     try {
         const response = await fetch(url, { method: 'PATCH', headers, body });
         const responseData = await response.json();
@@ -209,12 +207,10 @@ function Orders() {
         alert(`Error: ${err.message}`);
     }
 
-    // Finally, refresh all data and update UI state
     await fetchOrders();
     setSelectedOrder(prev => prev && prev.id === orderToUpdate.id ? { ...prev, status: newStatus.toUpperCase() } : null);
   };
 
-  // --- Filtering and Display Logic (Unchanged) ---
   const ordersData = activeTab === "store" ? storeOrders : onlineOrders;
   const filteredData = ordersData.filter(order => {
     const text = searchText.toLowerCase();
