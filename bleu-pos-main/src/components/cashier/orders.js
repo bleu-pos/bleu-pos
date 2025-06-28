@@ -7,6 +7,7 @@ import OrderPanel from "./orderPanel";
 // --- Base URL for the sales service ---
 const SALES_API_BASE_URL = 'https://sales-service-bm35.onrender.com';
 
+
 function Orders() {
   const [searchText, setSearchText] = useState("");
   const [filterDate, setFilterDate] = useState(new Date().toISOString().slice(0, 10));
@@ -48,7 +49,7 @@ function Orders() {
 
       // Note: Using the query parameter version as it is more likely to be correct.
       // If `?status=processing` fails, you can try `/status/processing` again.
-      const response = await fetch(`${SALES_API_BASE_URL}/auth/purchase_orders?status=processing`, { headers });
+      const response = await fetch(`${SALES_API_BASE_URL}/auth/purchase_orders/status/processing`, { headers });
 
       if (!response.ok) {
         throw new Error(`Failed to load store orders. Status: ${response.status}`);
