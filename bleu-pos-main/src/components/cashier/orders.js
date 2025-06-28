@@ -5,7 +5,7 @@ import DataTable from "react-data-table-component";
 import OrderPanel from "./orderPanel";
 
 // --- For easy configuration, define the base URLs for your services ---
-const SALES_API_BASE_URL = 'https://sales-service-bm35.onrender.com'; // Your existing Sales Service
+
 const ONLINE_API_BASE_URL = 'https://ordering-service.onrender.com'; // Your new Online/Cart Service
 
 function Orders() {
@@ -50,10 +50,7 @@ function Orders() {
       const headers = { 'Authorization': `Bearer ${token}` };
 
       const [storeResponse, onlineResponse] = await Promise.allSettled([
-        // ===================================================================================
-        // FIXED: Added '/auth' to the URL to match the backend API's expected route.
-        // ===================================================================================
-        fetch(`${SALES_API_BASE_URL}/auth/purchase_orders/status/processing`, { headers }),
+        fetch(`https://sales-service-bm35.onrender.com/auth/purchase_orders/status/processing`, { headers }),
         fetch(`${ONLINE_API_BASE_URL}/cart/admin/orders/manage`, { headers })
       ]);
 
@@ -176,6 +173,7 @@ function Orders() {
     { name: "STATUS", selector: (row) => row.status, cell: (row) => (<span className={`orderpanel-status-badge orderpanel-${row.status.toLowerCase().replace(/\s+/g, '')}`}>{row.status}</span>), width: "15%" },
   ];
 
+  // --- SIMPLIFIED: This function now performs a single API call to update status ---
   const handleUpdateStatus = async (orderToUpdate, newStatus) => {
     const token = localStorage.getItem('authToken');
     if (!token) {
@@ -186,6 +184,7 @@ function Orders() {
     const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
     let url, body;
 
+    // Determine the correct API endpoint and payload based on the order source
     if (orderToUpdate.source === 'store') {
         url = `${SALES_API_BASE_URL}/auth/purchase_orders/${orderToUpdate.id}/status`;
         body = JSON.stringify({ newStatus: newStatus.toLowerCase() });
@@ -197,6 +196,7 @@ function Orders() {
         return;
     }
 
+    // Perform the status update API call
     try {
         const response = await fetch(url, { method: 'PATCH', headers, body });
         const responseData = await response.json();
@@ -209,10 +209,12 @@ function Orders() {
         alert(`Error: ${err.message}`);
     }
 
+    // Finally, refresh all data and update UI state
     await fetchOrders();
     setSelectedOrder(prev => prev && prev.id === orderToUpdate.id ? { ...prev, status: newStatus.toUpperCase() } : null);
   };
 
+  // --- Filtering and Display Logic (Unchanged) ---
   const ordersData = activeTab === "store" ? storeOrders : onlineOrders;
   const filteredData = ordersData.filter(order => {
     const text = searchText.toLowerCase();
